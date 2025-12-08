@@ -49,7 +49,7 @@ class CBBAController:
         base_value = 0.0
         enemy_pos = np.array(enemy['position'])
         
-        # Priority based on enemy type
+        # Priority based on enemy type (ground enemies prioritized)
         if enemy['type'] == 'GROUND_ATTACK':
             min_dist = float('inf')
             for asset in assets:
@@ -61,11 +61,11 @@ class CBBAController:
             time_to_impact = min_dist / max(enemy_speed, 1.0)
             
             if time_to_impact < 10.0:
-                base_value = 1000.0
+                base_value = 1500.0
             else:
-                base_value = 500.0
+                base_value = 800.0
         else:
-            base_value = 100.0
+            base_value = 150.0
         
         # Distance penalty
         distance = np.linalg.norm(self.position - enemy_pos)
@@ -156,7 +156,7 @@ class CBBAController:
             assignment_hash = (self.drone_id * 7919 + enemy_id * 6547) % 1000
             hash_boost = 1.0 + (assignment_hash / 1000.0) * 0.5
             
-            # Calculate base priority
+            # Calculate base priority (ground enemies have higher weight)
             priority = 0.0
             if enemy['type'] == 'GROUND_ATTACK':
                 min_dist = float('inf')
@@ -168,12 +168,12 @@ class CBBAController:
                 time_to_impact = min_dist / max(enemy_speed, 1.0)
                 
                 if time_to_impact < 10.0:
-                    priority = 1000.0 / max(time_to_impact, 0.1)
+                    priority = 1500.0 / max(time_to_impact, 0.1)
                 else:
-                    priority = 100.0 / max(min_dist, 1.0)
+                    priority = 150.0 / max(min_dist, 1.0)
             else:
                 dist = np.linalg.norm(enemy_pos - self.position)
-                priority = 50.0 / max(dist, 1.0)
+                priority = 60.0 / max(dist, 1.0)
             
             # Distance-based boost: closer drones naturally prioritize nearby threats
             my_dist = np.linalg.norm(enemy_pos - self.position)

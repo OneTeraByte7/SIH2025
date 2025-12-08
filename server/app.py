@@ -9,6 +9,12 @@ import os
 from dotenv import load_dotenv
 import traceback
 from dynamic_simulation import start_dynamic_simulation, get_dynamic_status, get_dynamic_data
+from drone_config import (
+    EMPTY_WEIGHT, MAX_TAKEOFF_WEIGHT, MAX_PAYLOAD,
+    ENDURANCE_MIN_EMPTY, ENDURANCE_MIN_FULL, BATTERY_INITIAL, MAX_SPEED,
+    BULLET_WEIGHT, MAX_BULLETS, TOTAL_AMMO_WEIGHT, MAX_PAYLOAD_KG,
+    update_battery
+)
 
 # Supabase client (optional)
 try:
@@ -604,6 +610,379 @@ def dynamic_data(sim_id):
     if 'error' in res:
         return jsonify({'error': 'Simulation not found'}), 404
     return jsonify(res)
+
+
+# ============================================================================
+# DRONE TELEMETRY API - Real-time Drone Monitoring
+# ============================================================================
+
+# Simulated drone telemetry data storage
+drone_telemetry = {
+    'battery_percentage': BATTERY_INITIAL,
+    'current_weight': EMPTY_WEIGHT + TOTAL_AMMO_WEIGHT,  # Start with full ammo
+    'bullets_remaining': MAX_BULLETS,
+    'last_updated': time.time(),
+    'flight_start_time': time.time(),
+    'state': 'ready'
+}
+telemetry_lock = Lock()
+
+
+def _derive_drone_state(battery_pct: float, bullets_remaining: int, flight_elapsed: float) -> str:
+    """Map telemetry readings to a coarse drone state for UI consumption."""
+    if battery_pct <= 0:
+        return 'powered_down'
+    if battery_pct < 10:
+        return 'emergency_rtb'
+    if battery_pct < 30:
+        return 'rtb_low_battery'
+    if bullets_remaining <= 0:
+        return 'needs_reload'
+    if flight_elapsed < 10:
+        return 'launch'
+    return 'airborne'
+
+
+@app.route('/api/drone/battery', methods=['GET'])
+def get_drone_battery():
+    """
+    GET request to retrieve current battery percentage of the drone.
+    Battery drains based on current bullet count and flight time.
+    
+    Empty payload (0 bullets) = 90 min flight time
+    Full payload (250 bullets) = 60 min flight time
+    
+    Example:
+    GET http://localhost:5000/api/drone/battery
+    
+    Response:
+    {
+        "battery_percentage": 95.5,
+        "status": "healthy",
+        "timestamp": 1733655468.123,
+        "estimated_flight_time_minutes": 71.6,
+        "current_weight_kg": 10.5,
+        "bullets_remaining": 250,
+        "flight_time_elapsed_seconds": 120.5
+    }
+    """
+    with telemetry_lock:
+        # Calculate time elapsed since last update
+        current_time = time.time()
+        dt_seconds = current_time - drone_telemetry['last_updated']
+        
+        # Update battery using the new formula
+        bullets = drone_telemetry['bullets_remaining']
+        current_battery = update_battery(
+            drone_telemetry['battery_percentage'],
+            bullets,
+            dt_seconds
+        )
+        
+        # Update stored values
+        drone_telemetry['battery_percentage'] = current_battery
+        drone_telemetry['last_updated'] = current_time
+        
+        # Calculate current weight
+        current_weight = EMPTY_WEIGHT + (bullets * BULLET_WEIGHT)
+        drone_telemetry['current_weight'] = current_weight
+        
+        # Calculate flight time elapsed
+        flight_elapsed = current_time - drone_telemetry['flight_start_time']
+        
+        # Determine battery status
+        if current_battery > 75:
+            status = "healthy"
+        elif current_battery > 30:
+            status = "warning"
+        elif current_battery > 10:
+            status = "critical"
+        else:
+            status = "emergency"
+        
+        # Calculate endurance based on current payload
+        payload_kg = bullets * BULLET_WEIGHT
+        payload_fraction = max(0.0, min(1.0, payload_kg / MAX_PAYLOAD_KG))
+        endurance_min = ENDURANCE_MIN_EMPTY - \
+                        (ENDURANCE_MIN_EMPTY - ENDURANCE_MIN_FULL) * payload_fraction
+        
+        # Calculate estimated remaining flight time
+        estimated_time = (current_battery / 100.0) * endurance_min
+        drone_state = _derive_drone_state(current_battery, bullets, flight_elapsed)
+        drone_telemetry['state'] = drone_state
+        
+        return jsonify({
+            'battery_percentage': round(current_battery, 2),
+            'status': status,
+            'state': drone_state,
+            'timestamp': current_time,
+            'estimated_flight_time_minutes': round(estimated_time, 1),
+            'total_flight_capacity_minutes': round(endurance_min, 1),
+            'current_weight_kg': round(current_weight, 2),
+            'bullets_remaining': bullets,
+            'flight_time_elapsed_seconds': round(flight_elapsed, 2)
+        })
+
+
+@app.route('/api/drone/drain', methods=['POST'])
+def drain_battery():
+    """
+    POST request to simulate battery drain and get current battery percentage.
+    Battery drains based on:
+    - Flight time (continuous drain based on bullet count)
+    - Speed: 10 m/s
+    - Bullet payload affects drain rate
+    
+    Empty payload (0 bullets) = 90 min flight time
+    Full payload (250 bullets) = 60 min flight time
+    
+    Example:
+    POST http://localhost:5000/api/drone/drain
+    
+    Optional Body:
+    {
+        "flight_duration_seconds": 10
+    }
+    
+    Response:
+    {
+        "battery_percentage": 95.5,
+        "status": "healthy",
+        "current_weight_kg": 10.5,
+        "bullets_remaining": 250,
+        "estimated_flight_time_minutes": 71.6,
+        "total_flight_capacity_minutes": 72.0,
+        "distance_traveled_km": 0.1,
+        "timestamp": 1733655478.456
+    }
+    """
+    with telemetry_lock:
+        # Get optional flight duration and weight from request
+        flight_duration = 0
+        weight_override = None
+        if request.json:
+            if 'flight_duration_seconds' in request.json:
+                flight_duration = float(request.json['flight_duration_seconds'])
+            if 'current_weight_kg' in request.json:
+                try:
+                    weight_override = float(request.json['current_weight_kg'])
+                except (TypeError, ValueError):
+                    weight_override = None
+        
+        # Calculate time elapsed since last update
+        current_time = time.time()
+        dt_seconds = current_time - drone_telemetry['last_updated']
+        
+        # Add manual flight duration if provided
+        total_time = dt_seconds + flight_duration
+        
+        # Update battery using the new formula
+        bullets = drone_telemetry['bullets_remaining']
+        current_battery = update_battery(
+            drone_telemetry['battery_percentage'],
+            bullets,
+            total_time,
+            current_weight_kg=weight_override or drone_telemetry.get('current_weight')
+        )
+        
+        # Update stored values
+        drone_telemetry['battery_percentage'] = current_battery
+        drone_telemetry['last_updated'] = current_time
+        
+        # Calculate current weight
+        if weight_override is not None:
+            current_weight = max(EMPTY_WEIGHT, min(MAX_TAKEOFF_WEIGHT, weight_override))
+        else:
+            current_weight = EMPTY_WEIGHT + (bullets * BULLET_WEIGHT)
+        drone_telemetry['current_weight'] = current_weight
+        
+        # Calculate flight time elapsed
+        flight_elapsed = current_time - drone_telemetry['flight_start_time']
+        
+        # Calculate distance traveled (speed = 10 m/s)
+        distance_meters = total_time * MAX_SPEED
+        distance_km = distance_meters / 1000.0
+        
+        # Determine battery status
+        if current_battery > 75:
+            status = "healthy"
+        elif current_battery > 30:
+            status = "warning"
+        elif current_battery > 10:
+            status = "critical"
+        else:
+            status = "emergency"
+        
+        # Calculate endurance based on current payload
+        payload_kg = bullets * BULLET_WEIGHT
+        payload_fraction = max(0.0, min(1.0, payload_kg / MAX_PAYLOAD_KG))
+        endurance_min = ENDURANCE_MIN_EMPTY - \
+                        (ENDURANCE_MIN_EMPTY - ENDURANCE_MIN_FULL) * payload_fraction
+        
+        # Calculate estimated remaining flight time
+        estimated_time = (current_battery / 100.0) * endurance_min
+        drone_state = _derive_drone_state(current_battery, bullets, flight_elapsed)
+        drone_telemetry['state'] = drone_state
+        
+        return jsonify({
+            'battery_percentage': round(current_battery, 2),
+            'status': status,
+            'state': drone_state,
+            'current_weight_kg': round(current_weight, 2),
+            'bullets_remaining': bullets,
+            'estimated_flight_time_minutes': round(estimated_time, 1),
+            'total_flight_capacity_minutes': round(endurance_min, 1),
+            'flight_time_elapsed_seconds': round(flight_elapsed, 2),
+            'distance_traveled_km': round(distance_km, 3),
+            'timestamp': current_time
+        })
+
+
+@app.route('/api/drone/fire', methods=['POST'])
+def fire_bullet():
+    """
+    POST request to fire a bullet and reduce drone weight.
+    Each bullet weighs 10 grams (0.01 kg).
+    Maximum 250 bullets capacity.
+    Weight reduction affects battery drain rate.
+    
+    Example:
+    POST http://localhost:5000/api/drone/fire
+    
+    Optional Body:
+    {
+        "bullets_fired": 1
+    }
+    
+    Response:
+    {
+        "message": "Fired 1 bullet(s)",
+        "bullets_remaining": 249,
+        "current_weight_kg": 10.49,
+        "weight_reduced_kg": 0.01,
+        "battery_percentage": 95.5,
+        "estimated_flight_time_minutes": 75.2,
+        "timestamp": 1733655468.123
+    }
+    """
+    with telemetry_lock:
+        # Get number of bullets to fire (default = 1)
+        bullets_fired = 1
+        if request.json and 'bullets_fired' in request.json:
+            bullets_fired = int(request.json['bullets_fired'])
+        
+        # Check if enough bullets remaining
+        if drone_telemetry['bullets_remaining'] < bullets_fired:
+            return jsonify({
+                'error': 'Not enough bullets',
+                'bullets_remaining': drone_telemetry['bullets_remaining'],
+                'bullets_requested': bullets_fired
+            }), 400
+        
+        # Reduce bullets
+        drone_telemetry['bullets_remaining'] -= bullets_fired
+        weight_reduced = BULLET_WEIGHT * bullets_fired
+        
+        # Recalculate weight
+        bullets = drone_telemetry['bullets_remaining']
+        current_weight = EMPTY_WEIGHT + (bullets * BULLET_WEIGHT)
+        drone_telemetry['current_weight'] = current_weight
+        
+        current_time = time.time()
+        current_battery = drone_telemetry['battery_percentage']
+        flight_elapsed = current_time - drone_telemetry['flight_start_time']
+        drone_state = _derive_drone_state(current_battery, bullets, flight_elapsed)
+        drone_telemetry['state'] = drone_state
+        
+        # Calculate new endurance based on reduced payload
+        payload_kg = bullets * BULLET_WEIGHT
+        payload_fraction = max(0.0, min(1.0, payload_kg / MAX_PAYLOAD_KG))
+        endurance_min = ENDURANCE_MIN_EMPTY - \
+                        (ENDURANCE_MIN_EMPTY - ENDURANCE_MIN_FULL) * payload_fraction
+        
+        # Calculate estimated remaining flight time
+        estimated_time = (current_battery / 100.0) * endurance_min
+        
+        return jsonify({
+            'message': f'Fired {bullets_fired} bullet(s)',
+            'bullets_remaining': bullets,
+            'current_weight_kg': round(current_weight, 2),
+            'weight_reduced_kg': round(weight_reduced, 3),
+            'battery_percentage': round(current_battery, 2),
+            'estimated_flight_time_minutes': round(estimated_time, 1),
+            'total_flight_capacity_minutes': round(endurance_min, 1),
+            'state': drone_state,
+            'timestamp': current_time
+        })
+
+
+@app.route('/api/drone/weight', methods=['POST'])
+def get_drone_weight():
+    """
+    POST request to retrieve current weight of the drone.
+    Automatically updates simulation every 10 seconds.
+    
+    Example:
+    POST http://localhost:5000/api/drone/weight
+    
+    Response:
+    {
+        "current_weight": 10.5,
+        "empty_weight": 8.0,
+        "max_weight": 15.0,
+        "payload_weight": 2.5,
+        "max_payload": 2.5,
+        "weight_percentage": 70.0,
+        "weight_status": "optimal",
+        "timestamp": 1733653468.123,
+        "remaining_capacity": 4.5,
+        "time_since_last_update": 12.5
+    }
+    """
+    with telemetry_lock:
+        # Simulate weight fluctuation over time (simulate payload changes every 10s)
+        time_elapsed = time.time() - drone_telemetry['last_updated']
+        
+        # If more than 10 seconds have passed, simulate minor weight change
+        if time_elapsed >= 10.0:
+            # Random payload fluctuation between -0.2 to +0.2 kg (simulates fuel consumption, minor adjustments)
+            import random
+            weight_change = random.uniform(-0.2, 0.2)
+            new_weight = drone_telemetry['current_weight'] + weight_change
+            drone_telemetry['current_weight'] = max(
+                EMPTY_WEIGHT,
+                min(MAX_TAKEOFF_WEIGHT, new_weight)
+            )
+            drone_telemetry['last_updated'] = time.time()
+        
+        # Calculate payload weight
+        current_weight = drone_telemetry['current_weight']
+        payload_weight = current_weight - EMPTY_WEIGHT
+        weight_percentage = (current_weight / MAX_TAKEOFF_WEIGHT) * 100
+        
+        # Validate payload doesn't exceed limit
+        if payload_weight > MAX_PAYLOAD:
+            weight_status = "overload"
+        elif weight_percentage < 70:
+            weight_status = "optimal"
+        elif weight_percentage < 90:
+            weight_status = "acceptable"
+        else:
+            weight_status = "maximum"
+        
+        return jsonify({
+            'current_weight': round(current_weight, 2),
+            'empty_weight': EMPTY_WEIGHT,
+            'max_weight': MAX_TAKEOFF_WEIGHT,
+            'payload_weight': round(payload_weight, 2),
+            'max_payload': MAX_PAYLOAD,
+            'weight_percentage': round(weight_percentage, 1),
+            'weight_status': weight_status,
+            'timestamp': drone_telemetry['last_updated'],
+            'remaining_capacity': round(MAX_TAKEOFF_WEIGHT - current_weight, 2),
+            'time_since_last_update': round(time_elapsed, 2)
+        })
+
 
 @app.route('/api/health', methods=['GET'])
 def health_check():

@@ -44,7 +44,6 @@ class SuperSimulation:
             self.assets.append(asset)
         
         # Friendlies - formation driven by selected algorithm
-        friendly_count = self.config.get('friendly_count', 15)
         anchor = self.assets[0].position.copy() if self.assets else np.zeros(3)
 
         for i in range(friendly_count):
@@ -59,8 +58,9 @@ class SuperSimulation:
             drone.role = self.algorithm.update_role(drone, self.enemies, self.assets)
             self.friendlies.append(drone)
         
+        print(f"[Sim] Created {len(self.friendlies)} friendlies (IDs: {min(f.id for f in self.friendlies)}-{max(f.id for f in self.friendlies)})")
+        
         # Enemies - start farther away
-        enemy_count = self.config.get('enemy_count', 12)
         ground_ratio = self.config.get('ground_attack_ratio', 0.4)
         
         for i in range(enemy_count):
@@ -104,6 +104,8 @@ class SuperSimulation:
                 health=85.0  # Optimal health for quick but visible neutralization
             )
             self.enemies.append(drone)
+        
+        print(f"[Sim] Created {len(self.enemies)} enemies (IDs: {min(e.id for e in self.enemies)}-{max(e.id for e in self.enemies)})")
     
     def engage_target(self, attacker: Drone, target: Drone):
         """Ultra-effective combat - guaranteed enemy neutralization"""
