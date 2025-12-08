@@ -1,0 +1,102 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Dynamic Asset Simulation</title>
+  <style>
+    body { font-family: system-ui, Arial; background: #0b1220; color: #cfe8ff; padding: 20px }
+    .card { background: #071025; padding: 16px; border-radius: 8px; max-width: 980px }
+    button { background: #0ea5a0; color: white; border: none; padding: 8px 12px; border-radius: 6px }
+    .log { background: #00121a; padding: 8px; max-height: 400px; overflow: auto; border-radius: 6px; margin-top: 12px }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Dynamic Asset Simulation (moving asset)</h2>
+    <p>Starts a simulation where the protected asset moves along a simple predefined path. This page is lightweight and does not modify the existing app.</p>
+
+    <div>
+      <label>Max time: <input id="max_time" type="number" value="30" /></label>
+      <label style="margin-left:12px">Friendly count: <input id="friendly_count" type="number" value="12" /></label>
+      <label style="margin-left:12px">Enemy count: <input id="enemy_count" type="number" value="8" /></label>
+    </div>
+
+    <div style="margin-top:12px">
+      <button id="startBtn">Start Dynamic Simulation</button>
+      <button id="stopPoll" disabled>Stop Polling</button>
+    </div>
+
+    <div class="log" id="log"></div>
+  </div>
+
+  <script>
+    const API = '/api/dynamic';
+    const logEl = document.getElementById('log');
+
+    function log(msg){
+      const line = document.createElement('div');
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logEl.prepend(line);
+    }
+
+    let pollHandle = null;
+
+    document.getElementById('startBtn').addEventListener('click', async () => {
+      const max_time = Number(document.getElementById('max_time').value) || 30;
+      const friendly_count = Number(document.getElementById('friendly_count').value) || 12;
+      const enemy_count = Number(document.getElementById('enemy_count').value) || 8;
+
+      // Simple path: move asset from [-400,0,0] to [400,0,0] linearly over max_time
+      const steps = 8;
+      const asset_path = [];
+      for(let i=0;i<=steps;i++){
+        const t = (i/steps) * max_time;
+        const x = -400 + (800 * (i/steps));
+        asset_path.push({ time: t, pos: [x, 0, 0] });
+      }
+
+      const payload = {
+        max_time, friendly_count, enemy_count,
+        max_speed: 70, weapon_range: 150, detection_range: 1500,
+        swarm_algorithm: 'cbba-superiority',
+        assets: [{ position: [0,0,0], value: 1 }],
+        asset_path
+      };
+
+      log('Starting dynamic sim...');
+
+      try{
+        const r = await fetch(API + '/start', { method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload) });
+        const data = await r.json();
+        const simId = data.simulation_id;
+        log('Started: ' + simId);
+
+        // poll status every 1s
+        if(pollHandle){ clearInterval(pollHandle); }
+        pollHandle = setInterval(async ()=>{
+          try{
+            const s = await fetch(API + '/' + simId + '/status');
+            if(!s.ok){ log('Status fetch failed'); return; }
+            const st = await s.json();
+            log(`Status ${st.status} — ${st.progress?.toFixed?.(2) ?? st.progress}%`);
+            if(st.status === 'completed'){
+              clearInterval(pollHandle); pollHandle = null; document.getElementById('stopPoll').disabled = true;
+              // fetch a slice of frames
+              const framesR = await fetch(API + '/' + simId + '/data?start=0&end=10');
+              const frames = await framesR.json();
+              log('Frames fetched: ' + frames.frames.length + ' (showing up to 10)');
+              console.log('frames sample', frames.frames);
+            }
+          }catch(e){ log('Poll error: ' + e.message); }
+        }, 1000);
+        document.getElementById('stopPoll').disabled = false;
+
+      }catch(err){ log('Start failed: ' + err.message); }
+    });
+
+    document.getElementById('stopPoll').addEventListener('click', ()=>{
+      if(pollHandle){ clearInterval(pollHandle); pollHandle = null; document.getElementById('stopPoll').disabled = true; log('Polling stopped'); }
+    });
+  </script>
+</body>
+</html>
