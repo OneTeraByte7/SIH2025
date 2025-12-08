@@ -9,6 +9,7 @@ import DynamicPage from './DynamicPage.jsx';
 import LegendPanel from './LegendPanel.jsx';
 import AssetPlacementMap from './AssetPlacementMap.jsx';
 import { API_BASE, MAP_EXTENT, defaultSwarmAlgorithmOptions } from './constants';
+import { createDroneModel } from './three/createDroneModel.js';
 import './App.css';
 
 const EnhancedDroneSwarmSystem = () => {
@@ -100,6 +101,18 @@ const EnhancedDroneSwarmSystem = () => {
     assets: [{ position: [0, 0, 0], value: 1.0 }]
   });
 
+  const [quickScenarioConfig, setQuickScenarioConfig] = useState({
+    name: 'Inline Quick Scenario',
+    friendly_count: 20,
+    enemy_count: 12,
+    ground_attack_ratio: 0.35,
+    max_time: 300,
+    max_speed: 70.0,
+    weapon_range: 150.0,
+    detection_range: 1500.0,
+    assets: [{ position: [0, 0, 0], value: 1.0 }]
+  });
+
   const mountRef = useRef(null);
   const sceneRef = useRef(null);
   const rendererRef = useRef(null);
@@ -110,6 +123,7 @@ const EnhancedDroneSwarmSystem = () => {
   const cameraModeRef = useRef(cameraMode);
 
   const trailsRef = useRef([]);
+  const propellerGroupsRef = useRef([]);
 
 
 
@@ -203,6 +217,30 @@ const EnhancedDroneSwarmSystem = () => {
     const scene = sceneRef.current;
     if (!scene) return;
 
+    const disposedGeometries = new Set();
+    const disposedMaterials = new Set();
+    const disposeObject = (object) => {
+      object.traverse(child => {
+        if (child.geometry && !disposedGeometries.has(child.geometry.uuid)) {
+          child.geometry.dispose();
+          disposedGeometries.add(child.geometry.uuid);
+        }
+        if (child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach(mat => {
+              if (mat && !disposedMaterials.has(mat.uuid)) {
+                mat.dispose();
+                disposedMaterials.add(mat.uuid);
+              }
+            });
+          } else if (!disposedMaterials.has(child.material.uuid)) {
+            child.material.dispose();
+            disposedMaterials.add(child.material.uuid);
+          }
+        }
+      });
+    };
+
     const removable = [];
     scene.children.forEach(child => {
       if (child.userData?.persistent) return;
@@ -210,22 +248,17 @@ const EnhancedDroneSwarmSystem = () => {
         removable.push(child);
         return;
       }
-      if (child.type === 'Mesh' || child.type === 'Line' || child.type === 'Sprite') {
+      if (child.type === 'Mesh' || child.type === 'Line' || child.type === 'Sprite' || child.type === 'Group') {
         removable.push(child);
       }
     });
 
     removable.forEach(obj => {
       scene.remove(obj);
-      if (obj.geometry) obj.geometry.dispose();
-      if (obj.material) {
-        if (Array.isArray(obj.material)) {
-          obj.material.forEach(m => m.dispose());
-        } else {
-          obj.material.dispose();
-        }
-      }
+      disposeObject(obj);
     });
+
+    propellerGroupsRef.current = [];
 
     frame.assets?.forEach(asset => {
       console.log('[App.jsx] Asset health:', asset.health);
@@ -271,21 +304,23 @@ const EnhancedDroneSwarmSystem = () => {
     frame.friendlies?.forEach(drone => {
       if (drone.health <= 0) return;
 
-      // Color based on role, but all use sphere geometry
       let color = 0x00aaff; // Default defender color (cyan)
       if (drone.role === 'hunter') color = 0xff6600; // Orange
-      if (drone.role === 'interceptor') color = 0xff0066; // Pink
 
-      const geometry = new THREE.SphereGeometry(15, 16, 16);
-      const material = new THREE.MeshPhongMaterial({
+
+      const scaleBump = drone.role === 'hunter' ? 1.2 : 1;
+      const { group: droneMesh, propellers } = createDroneModel({
         color,
-        emissive: color,
-        emissiveIntensity: 0.4
+        accent: 0xe6f4ff,
+        propellerColor: 0xffffff,
+        scale: 0.9 * scaleBump
       });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(drone.position[0], drone.position[1], drone.position[2]);
-      mesh.userData.removable = true;
-      scene.add(mesh);
+      if (Array.isArray(propellers) && propellers.length) {
+        propellerGroupsRef.current.push(...propellers);
+      }
+      droneMesh.position.set(drone.position[0], drone.position[1], drone.position[2]);
+      droneMesh.userData.removable = true;
+      scene.add(droneMesh);
 
       const healthBar = createHealthBar(drone.health / 150);
       healthBar.position.set(drone.position[0], drone.position[1] + 30, drone.position[2]);
@@ -324,38 +359,26 @@ const EnhancedDroneSwarmSystem = () => {
 
       console.log('[App.jsx] Enemy drone type:', drone.type, 'drone_type:', drone.drone_type);
 
-      // Different shapes and colors for ground vs air enemies
-      let color, geometry;
-      if (drone.type === 'enemy_ground' || drone.drone_type === 'enemy_ground') {
-        // Ground enemy - use a box/cube shape
-        color = 0xff3333;
-        geometry = new THREE.BoxGeometry(25, 15, 25);
-        console.log('[App.jsx] Rendering GROUND enemy as box');
-      } else {
-        // Air enemy - use cone/pyramid shape
-        color = 0xff9933;
-        geometry = new THREE.ConeGeometry(12, 30, 4);
-        console.log('[App.jsx] Rendering AIR enemy as cone');
-      }
-
-      const material = new THREE.MeshPhongMaterial({
+      const isGround = drone.type === 'enemy_ground' || drone.drone_type === 'enemy_ground';
+      const color = isGround ? 0xff3333 : 0xff9933;
+      const { group: droneMesh, propellers } = createDroneModel({
         color,
-        emissive: color,
-        emissiveIntensity: 0.5
+        accent: isGround ? 0x401010 : 0xffc199,
+        propellerColor: isGround ? 0x1a0000 : 0x331100,
+        scale: isGround ? 1.1 : 0.95,
+        showLandingSkids: isGround
       });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(drone.position[0], drone.position[1], drone.position[2]);
-
-      // Rotate cone enemies upside down
-      if (drone.type !== 'enemy_ground' && drone.drone_type !== 'enemy_ground') {
-        mesh.rotation.x = Math.PI;
+      if (Array.isArray(propellers) && propellers.length) {
+        propellerGroupsRef.current.push(...propellers);
       }
-
-      mesh.userData.removable = true;
-      scene.add(mesh);
+      const groundYOffset = isGround ? Math.max(10, drone.position[1] + 5) : drone.position[1];
+      droneMesh.position.set(drone.position[0], groundYOffset, drone.position[2]);
+      droneMesh.userData.removable = true;
+      scene.add(droneMesh);
 
       const healthBar = createHealthBar(drone.health / 85);
-      healthBar.position.set(drone.position[0], drone.position[1] + 25, drone.position[2]);
+      const barHeight = isGround ? groundYOffset + 35 : drone.position[1] + 25;
+      healthBar.position.set(drone.position[0], barHeight, drone.position[2]);
       healthBar.userData.removable = true;
       scene.add(healthBar);
 
@@ -363,11 +386,12 @@ const EnhancedDroneSwarmSystem = () => {
       const enemyType = (drone.type === 'enemy_ground' || drone.drone_type === 'enemy_ground') ? 'GROUND' : 'AIR';
       const typeLabel = createTextSprite(enemyType, color);
       typeLabel.scale.set(40, 10, 1);
-      typeLabel.position.set(drone.position[0], drone.position[1] + 40, drone.position[2]);
+      const labelHeight = isGround ? barHeight + 15 : drone.position[1] + 40;
+      typeLabel.position.set(drone.position[0], labelHeight, drone.position[2]);
       typeLabel.userData.removable = true;
       scene.add(typeLabel);
     });
-  }, []);
+  }, [createDroneModel, propellerGroupsRef]);
 
   const initThreeJS = useCallback(() => {
     if (!mountRef.current) return;
@@ -427,11 +451,18 @@ const EnhancedDroneSwarmSystem = () => {
         cameraRef.current.lookAt(0, 0, 0);
       }
 
+      if (propellerGroupsRef.current.length) {
+        propellerGroupsRef.current = propellerGroupsRef.current.filter(group => group && group.parent);
+        propellerGroupsRef.current.forEach(group => {
+          group.rotation.y += group.userData.spinSpeed ?? 0.35;
+        });
+      }
+
       rendererRef.current.render(sceneRef.current, cameraRef.current);
     };
 
     animate();
-  }, [updateGridVisibility, visualQuality]);
+  }, [propellerGroupsRef, updateGridVisibility, visualQuality]);
 
   useEffect(() => {
     cameraModeRef.current = cameraMode;
@@ -685,6 +716,33 @@ const EnhancedDroneSwarmSystem = () => {
 
       return { ...prev, assets: updated };
     });
+  };
+
+  const updateQuickScenarioField = useCallback((field, rawValue) => {
+    setQuickScenarioConfig(prev => {
+      let nextValue = prev[field];
+      if (field === 'ground_attack_ratio') {
+        const parsed = parseFloat(rawValue);
+        if (Number.isFinite(parsed)) {
+          nextValue = Math.min(1, Math.max(0, parsed));
+        }
+      } else {
+        const parsed = parseInt(rawValue, 10);
+        if (Number.isFinite(parsed)) {
+          nextValue = Math.max(0, parsed);
+        }
+      }
+      return { ...prev, [field]: nextValue };
+    });
+  }, []);
+
+  const launchQuickScenario = () => {
+    const payload = {
+      ...quickScenarioConfig,
+      swarm_algorithm: swarmAlgorithm,
+      name: quickScenarioConfig.name || 'Inline Quick Scenario'
+    };
+    startSimulation(payload);
   };
 
   const updateAssetPosition = (index, axis, rawValue) => {
@@ -969,19 +1027,19 @@ const EnhancedDroneSwarmSystem = () => {
                   <p className="text-base font-semibold text-accent tracking-wide">Running Simulation</p>
                   <p className="text-sm text-gray-300">Computing swarm dynamics...</p>
                 </div>
-                </div>
-                </div>
+              </div>
+            </div>
           )}
 
           <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
             <div className="xl:col-span-3 space-y-4">
               <div className="bg-black/40 backdrop-blur rounded-xl border border-accent/40 shadow-2xl">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-accent/40">
-                  <h3 className="text-xl font-semibold flex items-center gap-2">
-                    <Camera className="w-5 h-5 text-white/40" />
-                    Tactical Battlefield View
-                  </h3>
-                  <div className="flex gap-2">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between px-4 py-3 border-b border-accent/40">
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-xl font-semibold flex items-center gap-2">
+                      <Camera className="w-5 h-5 text-white/40" />
+                      Tactical Battlefield View
+                    </h3>
                     <button
                       onClick={() => setShowControls(prev => !prev)}
                       className="p-2 bg-accent hover:bg-gray-600 rounded transition-colors"
@@ -990,132 +1048,169 @@ const EnhancedDroneSwarmSystem = () => {
                       <Sliders className="w-4 h-4 text-black" />
                     </button>
                   </div>
+                  <div className="flex flex-wrap items-end gap-3 justify-end">
+                    <label className="flex flex-col text-xs text-gray-400">
+                      Friendlies
+                      <input
+                        type="number"
+                        min="1"
+                        value={quickScenarioConfig.friendly_count}
+                        onChange={(e) => updateQuickScenarioField('friendly_count', e.target.value)}
+                        className="mt-1 w-24 bg-black/40 border border-accent/40 rounded-lg px-2 py-1.5 text-sm text-accent"
+                      />
+                    </label>
+                    <label className="flex flex-col text-xs text-gray-400">
+                      Enemies
+                      <input
+                        type="number"
+                        min="1"
+                        value={quickScenarioConfig.enemy_count}
+                        onChange={(e) => updateQuickScenarioField('enemy_count', e.target.value)}
+                        className="mt-1 w-24 bg-black/40 border border-accent/40 rounded-lg px-2 py-1.5 text-sm text-accent"
+                      />
+                    </label>
+                    <label className="flex flex-col text-xs text-gray-400">
+                      Ground Ratio
+                      <input
+                        type="number"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={quickScenarioConfig.ground_attack_ratio}
+                        onChange={(e) => updateQuickScenarioField('ground_attack_ratio', e.target.value)}
+                        className="mt-1 w-28 bg-black/40 border border-accent/40 rounded-lg px-2 py-1.5 text-sm text-accent"
+                      />
+                    </label>
+                    <button
+                      onClick={launchQuickScenario}
+                      className="px-4 py-2 rounded-lg bg-gradient-to-r from-accent/80 to-accent text-black text-sm font-semibold "
+                    >
+                      Launch Quick Sim
+                    </button>
+                  </div>
                 </div>
 
                 {showControls && (
-                <div className="bg-accent/20 p-4 backdrop-blur">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      onClick={() => setPlaying(prev => !prev)}
-                      disabled={frames.length === 0}
-                      className="px-6 py-3 bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 disabled:from-gray-700 disabled:to-gray-700 rounded-lg flex items-center gap-2 transition-all font-semibold shadow-lg disabled:cursor-not-allowed"
-                    >
-                      {playing ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-                      {playing ? 'Pause' : 'Play'}
-                    </button>
+                  <div className="bg-accent/20 p-4 backdrop-blur">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        onClick={() => setPlaying(prev => !prev)}
+                        disabled={frames.length === 0}
+                        className="px-6 py-3 bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 disabled:from-gray-700 disabled:to-gray-700 rounded-lg flex items-center gap-2 transition-all font-semibold shadow-lg disabled:cursor-not-allowed"
+                      >
+                        {playing ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                        {playing ? 'Pause' : 'Play'}
+                      </button>
 
-                    <button
-                      onClick={() => { setCurrentFrame(0); setPlaying(false); }}
-                      disabled={frames.length === 0}
-                      className="px-4 py-3 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 rounded-lg transition-all disabled:cursor-not-allowed"
-                      title="Restart"
-                    >
-                      <RotateCcw className="w-5 h-5" />
-                    </button>
+                      <button
+                        onClick={() => { setCurrentFrame(0); setPlaying(false); }}
+                        disabled={frames.length === 0}
+                        className="px-4 py-3 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 rounded-lg transition-all disabled:cursor-not-allowed"
+                        title="Restart"
+                      >
+                        <RotateCcw className="w-5 h-5" />
+                      </button>
 
-                    <button
-                      onClick={() => {
-                        setCurrentFrame(Math.max(0, currentFrame - 50));
-                        setPlaying(false);
-                      }}
-                      disabled={frames.length === 0 || currentFrame === 0}
-                      className="px-4 py-3 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 rounded-lg transition-all disabled:cursor-not-allowed"
-                      title="Skip back 50 frames"
-                    >
-                      <SkipBack className="w-5 h-5" />
-                    </button>
+                      <button
+                        onClick={() => {
+                          setCurrentFrame(Math.max(0, currentFrame - 50));
+                          setPlaying(false);
+                        }}
+                        disabled={frames.length === 0 || currentFrame === 0}
+                        className="px-4 py-3 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 rounded-lg transition-all disabled:cursor-not-allowed"
+                        title="Skip back 50 frames"
+                      >
+                        <SkipBack className="w-5 h-5" />
+                      </button>
 
-                    <button
-                      onClick={() => {
-                        setCurrentFrame(Math.min(frames.length - 1, currentFrame + 50));
-                        setPlaying(false);
-                      }}
-                      disabled={frames.length === 0 || currentFrame >= frames.length - 1}
-                      className="px-4 py-3 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 rounded-lg transition-all disabled:cursor-not-allowed"
-                      title="Skip forward 50 frames"
-                    >
-                      <SkipForward className="w-5 h-5" />
-                    </button>
+                      <button
+                        onClick={() => {
+                          setCurrentFrame(Math.min(frames.length - 1, currentFrame + 50));
+                          setPlaying(false);
+                        }}
+                        disabled={frames.length === 0 || currentFrame >= frames.length - 1}
+                        className="px-4 py-3 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 rounded-lg transition-all disabled:cursor-not-allowed"
+                        title="Skip forward 50 frames"
+                      >
+                        <SkipForward className="w-5 h-5" />
+                      </button>
 
-                    <button
-                      onClick={() => {
-                        setCurrentFrame(frames.length - 1);
-                        setPlaying(false);
-                        console.log('[Playback] Jumped to end, frame:', frames.length - 1);
-                      }}
-                      disabled={frames.length === 0}
-                      className="px-4 py-3 bg-red-600 disabled:from-gray-700 disabled:to-gray-700 rounded-lg transition-all disabled:cursor-not-allowed font-semibold"
-                      title="Jump to End"
-                    >
-                      End
-                    </button>
+                      <button
+                        onClick={() => {
+                          setCurrentFrame(frames.length - 1);
+                          setPlaying(false);
+                          console.log('[Playback] Jumped to end, frame:', frames.length - 1);
+                        }}
+                        disabled={frames.length === 0}
+                        className="px-4 py-3 bg-red-600 disabled:from-gray-700 disabled:to-gray-700 rounded-lg transition-all disabled:cursor-not-allowed font-semibold"
+                        title="Jump to End"
+                      >
+                        End
+                      </button>
 
-                    <button
-                      onClick={() => navigate('/dynamic')}
-                      className="px-3 py-3 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm"
-                      title="Dynamic Simulation"
-                    >
-                      Dynamic
-                    </button>
+                      <button
+                        onClick={() => navigate('/dynamic')}
+                        className="px-3 py-3 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm"
+                        title="Dynamic Simulation"
+                      >
+                        Dynamic
+                      </button>
 
-                    <div className="flex-1 min-w-[200px]">
+                      <div className="flex-1 min-w-[200px]">
+                        <input
+                          type="range"
+                          min="0"
+                          max={Math.max(frames.length - 1, 0)}
+                          value={currentFrame}
+                          onChange={(e) => setCurrentFrame(parseInt(e.target.value, 10))}
+                          disabled={frames.length === 0}
+                          className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                        />
+                      </div>
+
+                      <span className="text-sm text-gray-400 font-mono min-w-[140px] text-right bg-gray-800 px-3 py-2 rounded flex flex-col">
+                        <span>{frames.length > 0 ? `Frame ${currentFrame + 1} / ${frames.length}` : 'No data'}</span>
+                        {frames.length > 0 && (
+                          <span className="text-xs text-gray-500">
+                            {((currentFrame / Math.max(frames.length - 1, 1)) * 100).toFixed(1)}% complete
+                          </span>
+                        )}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-4 mt-4">
+                      <span className="text-sm text-gray-400">Speed:</span>
                       <input
                         type="range"
-                        min="0"
-                        max={Math.max(frames.length - 1, 0)}
-                        value={currentFrame}
-                        onChange={(e) => setCurrentFrame(parseInt(e.target.value, 10))}
-                        disabled={frames.length === 0}
-                        className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                        min="0.25"
+                        max="4"
+                        step="0.25"
+                        value={playSpeed}
+                        onChange={(e) => setPlaySpeed(parseFloat(e.target.value))}
+                        className="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
                       />
+                      <span className="text-sm text-cyan-400 font-mono min-w-[40px]">{playSpeed}x</span>
                     </div>
 
-                    <span className="text-sm text-gray-400 font-mono min-w-[140px] text-right bg-gray-800 px-3 py-2 rounded flex flex-col">
-                      <span>{frames.length > 0 ? `Frame ${currentFrame + 1} / ${frames.length}` : 'No data'}</span>
-                      {frames.length > 0 && (
-                        <span className="text-xs text-gray-500">
-                          {((currentFrame / Math.max(frames.length - 1, 1)) * 100).toFixed(1)}% complete
-                        </span>
-                      )}
-                    </span>
-                  </div>
+                    {activeFrame && (
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4 text-sm">
+                        <div className="bg-gray-800/70 p-3 rounded-lg">
+                          <span className="text-gray-400">Time</span>
+                          <span className="text-cyan-400 ml-2 font-mono">{activeFrame.time.toFixed(1)}s</span>
+                        </div>
+                        <div className="bg-gray-800/70 p-3 rounded-lg">
+                          <span className="text-gray-400">Friendlies</span>
+                          <span className="text-green-400 ml-2 font-mono">{activeFrame.friendlies.filter(d => d.health > 0).length}</span>
+                        </div>
+                        <div className="bg-gray-800/70 p-3 rounded-lg">
+                          <span className="text-gray-400">Enemies</span>
+                          <span className="text-red-400 ml-2 font-mono">{activeFrame.enemies.filter(d => d.health > 0).length}</span>
+                        </div>
 
-                  <div className="flex items-center gap-4 mt-4">
-                    <span className="text-sm text-gray-400">Speed:</span>
-                    <input
-                      type="range"
-                      min="0.25"
-                      max="4"
-                      step="0.25"
-                      value={playSpeed}
-                      onChange={(e) => setPlaySpeed(parseFloat(e.target.value))}
-                      className="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-                    />
-                    <span className="text-sm text-cyan-400 font-mono min-w-[40px]">{playSpeed}x</span>
+                      </div>
+                    )}
                   </div>
-
-                  {activeFrame && (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4 text-sm">
-                      <div className="bg-gray-800/70 p-3 rounded-lg">
-                        <span className="text-gray-400">Time</span>
-                        <span className="text-cyan-400 ml-2 font-mono">{activeFrame.time.toFixed(1)}s</span>
-                      </div>
-                      <div className="bg-gray-800/70 p-3 rounded-lg">
-                        <span className="text-gray-400">Friendlies</span>
-                        <span className="text-green-400 ml-2 font-mono">{activeFrame.friendlies.filter(d => d.health > 0).length}</span>
-                      </div>
-                      <div className="bg-gray-800/70 p-3 rounded-lg">
-                        <span className="text-gray-400">Enemies</span>
-                        <span className="text-red-400 ml-2 font-mono">{activeFrame.enemies.filter(d => d.health > 0).length}</span>
-                      </div>
-                      <div className="bg-gray-800/70 p-3 rounded-lg">
-                        <span className="text-gray-400">Interceptors</span>
-                        <span className="text-pink-400 ml-2 font-mono">{activeFrame.friendlies.filter(d => d.role === 'interceptor' && d.health > 0).length}</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+                )}
 
                 <div className="relative">
                   <div
@@ -1145,7 +1240,7 @@ const EnhancedDroneSwarmSystem = () => {
                 </div>
               </div>
 
-              
+
             </div>
 
             <div className="space-y-4">
@@ -1173,7 +1268,7 @@ const EnhancedDroneSwarmSystem = () => {
                     </option>
                   ))}
                 </select>
-                
+
               </div>
 
               <div className="bg-black/40 backdrop-blur rounded-xl border border-accent/40 p-4 space-y-3">
@@ -1219,8 +1314,8 @@ const EnhancedDroneSwarmSystem = () => {
                     ))}
 
                     <div className={`mt-4 p-4 rounded-lg font-bold text-center text-sm shadow-lg ${stats.mission_success
-                      ? 'bg-gradient-to-r from-green-900/50 to-green-800/50 text-green-400 border border-green-700/50'
-                      : 'bg-gradient-to-r from-red-900/50 to-red-800/50 text-red-400 border border-red-700/50'
+                      ? ' text-green-400 '
+                      : ' text-red-400 '
                       }`}>
                       {stats.mission_success ? '✓ MISSION SUCCESS' : '✗ MISSION FAILED'}
                     </div>
@@ -1254,16 +1349,16 @@ const EnhancedDroneSwarmSystem = () => {
         </div>
 
         {showSettings && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-6">
-            <div className="bg-gray-900/90 border border-cyan-900/40 rounded-2xl p-6 w-full max-w-3xl">
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-md flex items-center justify-center z-50 p-6">
+            <div className="bg-black borde rounded-2xl p-6 w-full max-w-3xl">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-2xl font-semibold text-cyan-300">Preset Scenarios</h2>
+                <h2 className="text-2xl font-semibold text-white">Preset Scenarios</h2>
                 <button onClick={() => setShowSettings(false)} className="text-gray-400 hover:text-gray-200">✕</button>
               </div>
               <div className="grid md:grid-cols-2 gap-4">
                 {Object.entries(presets).map(([key, preset]) => (
-                  <div key={key} className="bg-black/40 border border-cyan-900/30 rounded-xl p-4 flex flex-col gap-2">
-                    <h3 className="text-lg font-semibold text-cyan-200">{preset.name}</h3>
+                  <div key={key} className="bg-black/40 border  rounded-xl p-4 flex flex-col gap-2">
+                    <h3 className="text-lg font-semibold">{preset.name}</h3>
                     <div className="text-xs text-gray-400 grid grid-cols-2 gap-1">
                       <span>Friendlies: <strong className="text-green-300">{preset.friendly_count}</strong></span>
                       <span>Enemies: <strong className="text-red-300">{preset.enemy_count}</strong></span>
@@ -1272,7 +1367,7 @@ const EnhancedDroneSwarmSystem = () => {
                     </div>
                     <button
                       onClick={() => startSimulation(preset)}
-                      className="mt-3 px-4 py-2 bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 rounded-lg text-sm font-semibold"
+                      className="mt-3 px-4 py-2 text-black bg-accent  rounded-lg text-sm font-semibold"
                     >
                       Launch Scenario
                     </button>
@@ -1284,14 +1379,14 @@ const EnhancedDroneSwarmSystem = () => {
         )}
 
         {showCustom && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-md overflow-y-auto z-50 p-6">
-            <div className="bg-gray-900/90 border border-purple-900/40 rounded-2xl p-6 w-full max-w-4xl mx-auto space-y-6">
+          <div className="fixed inset-0 bg-white/30 backdrop-blur-md overflow-y-auto z-50 p-6">
+            <div className="bg-black rounded-2xl p-6 w-full max-w-4xl mx-auto space-y-6">
               <div className="flex justify-between items-center">
                 <h2 className="text-2xl font-semibold text-purple-200">Custom Scenario Builder</h2>
                 <div className="flex gap-2">
                   <button
                     onClick={saveCustomScenario}
-                    className="px-3 py-2 text-xs bg-purple-700/60 hover:bg-purple-600/60 rounded-lg"
+                    className="px-3 py-2 text-xs bg-accent rounded-lg text-black"
                   >
                     Save Config
                   </button>
@@ -1404,7 +1499,7 @@ const EnhancedDroneSwarmSystem = () => {
                   <h3 className="text-lg font-semibold text-purple-200">Assets</h3>
                   <button
                     onClick={addAsset}
-                    className="px-3 py-2 text-xs bg-purple-700/60 hover:bg-purple-600/60 rounded-lg"
+                    className="px-3 py-2 text-xs bg-acc rounded-lg border border-accent text-accent"
                   >
                     Add Asset
                   </button>
@@ -1414,22 +1509,22 @@ const EnhancedDroneSwarmSystem = () => {
                   {customConfig.assets.map((asset, index) => (
                     <div
                       key={index}
-                      className={`bg-black/40 border rounded-xl p-4 space-y-4 text-sm transition-colors placement-card ${selectedAssetIndex === index ? 'border-purple-500/70 shadow-lg shadow-purple-900/30' : 'border-purple-900/30'}`}
+                      className={`bg-black/40 border rounded-xl p-4 space-y-4 text-sm transition-colors placement-card ${selectedAssetIndex === index ? 'border-accent/70 shadow-[0_10px_30px_rgba(0,191,143,0.3)]' : 'border-accent/30'}`}
                     >
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <p className="text-purple-100 font-semibold">Asset {index + 1}</p>
+                          <p className="text-accent font-semibold">Asset {index + 1}</p>
                           <p className="text-xs text-gray-400 mt-1">
                             Position:
-                            <span className="ml-2 font-mono text-purple-200">X {asset.position?.[0] ?? 0}</span>
-                            <span className="ml-3 font-mono text-purple-200">Y {asset.position?.[1] ?? 0}</span>
-                            <span className="ml-3 font-mono text-purple-200">Z {asset.position?.[2] ?? 0}</span>
+                            <span className="ml-2 font-mono text-accent/80">X {asset.position?.[0] ?? 0}</span>
+                            <span className="ml-3 font-mono text-accent/80">Y {asset.position?.[1] ?? 0}</span>
+                            <span className="ml-3 font-mono text-accent/80">Z {asset.position?.[2] ?? 0}</span>
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <button
                             onClick={() => setSelectedAssetIndex(index)}
-                            className={`px-3 py-2 rounded-lg text-xs flex items-center gap-2 transition-all ${selectedAssetIndex === index ? 'bg-purple-600/70 hover:bg-purple-600 text-white' : 'bg-purple-700/40 hover:bg-purple-600/60 text-purple-100'}`}
+                            className={`px-3 py-2 rounded-lg text-xs flex items-center gap-2 transition-all ${selectedAssetIndex === index ? 'bg-accent/70 hover:bg-accent text-black' : 'bg-accent/20 hover:bg-accent/50 text-accent'}`}
                           >
                             <MapPin className="w-4 h-4" />
                             Place on Map
@@ -1464,9 +1559,9 @@ const EnhancedDroneSwarmSystem = () => {
                               step="0.1"
                               value={asset.value ?? 1}
                               onChange={(e) => updateAssetValue(index, e.target.value)}
-                              className="flex-1 accent-purple-500"
+                              className="flex-1 accent-accent"
                             />
-                            <span className="font-mono text-purple-200 text-xs">{(asset.value ?? 1).toFixed(1)}x</span>
+                            <span className="font-mono text-accent/80 text-xs">{(asset.value ?? 1).toFixed(1)}x</span>
                           </div>
                         </div>
                       </div>
@@ -1496,7 +1591,7 @@ const EnhancedDroneSwarmSystem = () => {
                   </button>
                   <button
                     onClick={() => startSimulation(customConfig)}
-                    className="px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 rounded-lg font-semibold"
+                    className="px-4 py-2 bg-accent text-black rounded-lg font-semibold"
                   >
                     Launch Custom Scenario
                   </button>

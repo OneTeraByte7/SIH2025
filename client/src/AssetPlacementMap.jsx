@@ -62,7 +62,7 @@ const AssetPlacementMap = ({ assets, selectedIndex, onSelectAsset, onPositionCha
   }, [computeWorldCoords, onPositionChange, selectedIndex]);
 
   return (
-    <div className="hologram-card border border-purple-900/40 rounded-xl p-4 bg-black/30 backdrop-blur space-y-3">
+    <div className="hologram-card border border-accent/80 rounded-xl p-4 bg-black/30 backdrop-blur space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-purple-200 font-semibold">
           <MapPin className="w-5 h-5" />
@@ -136,7 +136,7 @@ const AssetPlacementMap = ({ assets, selectedIndex, onSelectAsset, onPositionCha
           <button
             key={`asset-select-${index}`}
             onClick={() => onSelectAsset(index)}
-            className={`asset-select-chip ${index === selectedIndex ? 'asset-select-chip--active' : ''}`}
+            className='bg-accent text-black px-3 py-2 rounded-full'
           >
             Asset {index + 1}
           </button>

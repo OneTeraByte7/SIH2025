@@ -1,57 +1,74 @@
 import React from 'react';
 import { Palette } from 'lucide-react';
+import LegendDronePreview from './components/LegendDronePreview.jsx';
 
 const LegendPanel = ({ activeFrame }) => {
   const friendlyCount = activeFrame?.friendlies?.filter(d => d.health > 0).length ?? 0;
   const enemyCount = activeFrame?.enemies?.filter(d => d.health > 0).length ?? 0;
 
   const legendItems = [
-
     {
       label: 'Friendly Drone (Defender)',
-      description: 'Orange sphere — fast pursuit units that chase down intruders.',
-      shape: 'circle',
-      color: 'bg-orange-600'
+      description: 'Cyan interceptors with high-agility props guard the inner perimeter.',
+      type: 'drone',
+      preview: {
+        color: 0x00aaff,
+        accent: 0xe6f4ff,
+        propellerColor: 0xffffff,
+        showLandingSkids: false
+      }
     },
     {
       label: 'Enemy Air Threat',
-      description: 'Orange cone — incoming hostile air drones breaching the perimeter.',
-      shape: 'triangle',
-      color: 'bg-orange-500'
+      description: 'Amber strike drones dive from above with heated rotor signatures.',
+      type: 'drone',
+      preview: {
+        color: 0xff9933,
+        accent: 0xffc199,
+        propellerColor: 0x331100,
+        showLandingSkids: false
+      }
     },
     {
       label: 'Enemy Ground Threat',
-      description: 'Red square — armoured ground attackers targeting strategic assets.',
-      shape: 'square',
-      color: 'bg-red-600'
+      description: 'Scarlet gunship variants with landing skids hug the canyon floor.',
+      type: 'drone',
+      preview: {
+        color: 0xff3333,
+        accent: 0x401010,
+        propellerColor: 0x1a0000,
+        showLandingSkids: true
+      }
     },
     {
       label: 'Strategic Asset Zone',
-      description: 'Green cylinder — critical infrastructure that must remain secure.',
+      description: 'Green resonant halo designates shielded mission infrastructure.',
+      type: 'shape',
       shape: 'circle',
-      color: 'bg-green-500'
+      colorClass: 'bg-green-500'
     },
     {
       label: 'Targeting Beam',
-      description: 'Red line — shows active engagement corridors during combat.',
+      description: 'Red vectored beam shows live engagement corridors during combat.',
+      type: 'shape',
       shape: 'line',
-      color: 'bg-red-500'
+      colorClass: 'bg-red-500'
     }
   ];
 
-  const renderShape = (shape, color) => {
+  const renderShape = (shape, colorClass) => {
     if (shape === 'circle') {
-      return <div className={`w-3 h-3 rounded-full ${color}`}></div>;
+      return <div className={`w-3 h-3 rounded-full ${colorClass}`}></div>;
     } else if (shape === 'square') {
-      return <div className={`w-3 h-3 ${color}`}></div>;
+      return <div className={`w-3 h-3 ${colorClass}`}></div>;
     } else if (shape === 'triangle') {
       return (
         <div className="w-3 h-3 relative">
-          <div className={`w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[12px] ${color.replace('bg-', 'border-b-')}`}></div>
+          <div className={`w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[12px] ${colorClass.replace('bg-', 'border-b-')}`}></div>
         </div>
       );
     } else if (shape === 'line') {
-      return <div className={`w-6 h-0.5 ${color}`}></div>;
+      return <div className={`w-6 h-0.5 ${colorClass}`}></div>;
     }
     return null;
   };
@@ -71,12 +88,16 @@ const LegendPanel = ({ activeFrame }) => {
 
       <div className="space-y-3">
         <p className="legend-note">
-          Colour key : green assets indicate friendlies, orange markers show hunters, blue highlights interceptors, red/crimson mark enemy forces (squares are ground enemies, cones are air enemies), and yellow zones flag protected infrastructure.
+          Colour key : cyan drones are friendlies, hot amber marks airborne intruders, crimson frames belong to armoured ground units, while luminous green halos remain strategic assets.
         </p>
         {legendItems.map(item => (
           <div key={item.label} className="legend-row">
-            <span className="flex items-center justify-center w-6 pt-2" aria-hidden="true">
-              {renderShape(item.shape, item.color)}
+            <span className="flex items-center justify-center w-16 pt-1" aria-hidden="true">
+              {item.type === 'drone' ? (
+                <LegendDronePreview {...item.preview} />
+              ) : (
+                renderShape(item.shape, item.colorClass)
+              )}
             </span>
             <div className="flex-1">
               <p className="legend-label">{item.label}</p>
