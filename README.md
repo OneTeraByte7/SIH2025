@@ -297,8 +297,23 @@ GET    /api/simulation/{id}/data      # Get frame data
 GET    /api/simulation/{id}/analytics # Get metrics
 GET    /api/algorithms                # List algorithms
 POST   /api/dynamic/start             # Moving asset scenario
+GET    /api/surveillance/status       # Get surveillance drones status (NEW)
+POST   /api/surveillance/patrol-area  # Update surveillance patrol area (NEW)
 GET    /api/health                    # Health check
 ```
+
+## 🛰️ Surveillance System
+
+The system now includes **always-on surveillance drones**:
+
+- ✅ **3 autonomous drones** continuously patrol when no simulation is running
+- ✅ **Automatic pause/resume** - pauses during swarm simulations, resumes after
+- ✅ **Circular patrol pattern** - 500m radius coverage with staggered altitudes
+- ✅ **Real-time tracking** - Live position, battery, and status updates
+- ✅ **Configurable patrol area** - Adjust center point and radius on-the-fly
+- ✅ **Zero maintenance** - Runs automatically in the background
+
+See [`SURVEILLANCE_SYSTEM.md`](server/SURVEILLANCE_SYSTEM.md) for full documentation.
 
 ## 🎯 Usage Example
 

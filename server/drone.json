@@ -1,0 +1,34 @@
+{
+    "DRONE-001": {
+        "battery_percent": 87.4,
+        "ammo_state": {
+            "total_bullets": 250,
+            "bullets_remaining": 180,
+            "payload_weight_kg": 1.8
+        },
+        "elapsed_flight_time_sec": 1260,
+        "drone_weight": {
+            "empty_weight_kg": 8.0,
+            "current_payload_weight_kg": 1.8,
+            "total_weight_kg": 9.8,
+            "drone_state": "LOW_BATTERY"
+        },
+        "timestamp": "1765231405.256097"
+    },
+    "DRONE-002": {
+        "battery_percent": 45.0,
+        "ammo_state": {
+            "total_bullets": 300,
+            "bullets_remaining": 179,
+            "payload_weight_kg": 2.5
+        },
+        "elapsed_flight_time_sec": 2400,
+        "drone_weight": {
+            "empty_weight_kg": 9.5,
+            "current_payload_weight_kg": 2.5,
+            "total_weight_kg": 12.0,
+            "drone_state": "LOW_BATTERY"
+        },
+        "timestamp": "1765231405.256097"
+    }
+}

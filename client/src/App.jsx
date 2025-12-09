@@ -16,6 +16,12 @@ const EnhancedDroneSwarmSystem = () => {
   const [frames, setFrames] = useState([]);
   const [stats, setStats] = useState(null);
   const [analytics, setAnalytics] = useState(null);
+  const [surveillanceDrones, setSurveillanceDrones] = useState([]);
+  const [surveillanceAsset, setSurveillanceAsset] = useState(null);
+  const [showSurveillance, setShowSurveillance] = useState(true);
+  const [spawnMode, setSpawnMode] = useState(false);
+  const [spawnType, setSpawnType] = useState('air'); // 'air' or 'ground'
+  const [simStatus, setSimStatus] = useState(null); // Track simulation status
 
   // Debug: Log when frames change
   useEffect(() => {
@@ -224,6 +230,159 @@ const EnhancedDroneSwarmSystem = () => {
       gridHelperRef.current = null;
     }
   }, [showGrid]);
+
+  const handleCanvasClick = useCallback(async (event) => {
+    if (!spawnMode || !currentSim || !playing) return; // Only allow spawning while playing
+    
+    const canvas = rendererRef.current?.domElement;
+    if (!canvas) return;
+    
+    // Get click position relative to canvas
+    const rect = canvas.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    
+    // Raycast to find 3D position
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera({ x, y }, cameraRef.current);
+    
+    // Create a ground plane to intersect with
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const intersectPoint = new THREE.Vector3();
+    raycaster.ray.intersectPlane(groundPlane, intersectPoint);
+    
+    if (intersectPoint && frames.length > 0) {
+      const position = [intersectPoint.x, 100, intersectPoint.z]; // Spawn at 100m altitude
+      
+      // Add enemy directly to the current and future frames
+      const newEnemyId = 2000 + Math.floor(Math.random() * 9000);
+      
+      const newEnemy = {
+        id: newEnemyId,
+        position: position,
+        velocity: [0, 0, 0],
+        health: 80.0,
+        type: spawnType === 'ground' ? 'enemy_ground' : 'enemy_air',
+        drone_type: spawnType === 'ground' ? 'enemy_ground' : 'enemy_air'
+      };
+      
+      // Add to all frames from current frame onwards
+      const updatedFrames = [...frames];
+      for (let i = currentFrame; i < updatedFrames.length; i++) {
+        updatedFrames[i] = {
+          ...updatedFrames[i],
+          enemies: [...updatedFrames[i].enemies, { ...newEnemy }]
+        };
+      }
+      
+      setFrames(updatedFrames);
+      
+      console.log(`✅ Spawned ${spawnType} enemy at`, position);
+      
+      // Visual feedback - create a temporary marker
+      if (sceneRef.current) {
+        const marker = new THREE.Mesh(
+          new THREE.SphereGeometry(15, 8, 8),
+          new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.8 })
+        );
+        marker.position.set(position[0], position[1], position[2]);
+        sceneRef.current.add(marker);
+        
+        // Remove marker after 1 second
+        setTimeout(() => {
+          sceneRef.current.remove(marker);
+          marker.geometry.dispose();
+          marker.material.dispose();
+        }, 1000);
+      }
+    }
+  }, [spawnMode, currentSim, spawnType, playing, frames, currentFrame]);
+
+  const renderSurveillanceScene = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    // Clear existing objects
+    const removable = [];
+    scene.children.forEach(child => {
+      if (child.userData?.persistent) return;
+      if (child.userData?.removable) removable.push(child);
+      if (child.type === 'Mesh' || child.type === 'Line' || child.type === 'Sprite') {
+        removable.push(child);
+      }
+    });
+
+    removable.forEach(obj => {
+      scene.remove(obj);
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        if (Array.isArray(obj.material)) {
+          obj.material.forEach(m => m.dispose());
+        } else {
+          obj.material.dispose();
+        }
+      }
+    });
+
+    // Render surveillance asset
+    if (surveillanceAsset) {
+      const geometry = new THREE.CylinderGeometry(50, 50, 100, 8);
+      const material = new THREE.MeshPhongMaterial({
+        color: 0x00ff00,
+        emissive: 0x003300,
+        emissiveIntensity: 0.5
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(surveillanceAsset.position[0], 50, surveillanceAsset.position[2]);
+      mesh.userData.removable = true;
+      scene.add(mesh);
+
+      const ringGeo = new THREE.RingGeometry(380, 400, 32);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0x00ff00,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.3
+      });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(surveillanceAsset.position[0], 5, surveillanceAsset.position[2]);
+      ring.userData.removable = true;
+      scene.add(ring);
+
+      const sprite = createTextSprite('ASSET', 0x00ff00);
+      sprite.position.set(surveillanceAsset.position[0], 180, surveillanceAsset.position[2]);
+      sprite.userData.removable = true;
+      scene.add(sprite);
+    }
+
+    // Render surveillance drones
+    surveillanceDrones.forEach(drone => {
+      const geometry = new THREE.SphereGeometry(12, 16, 16);
+      const material = new THREE.MeshPhongMaterial({
+        color: 0x00aaff,  // Blue for surveillance
+        emissive: 0x003366,
+        emissiveIntensity: 0.5
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(drone.position[0], drone.position[1], drone.position[2]);
+      mesh.userData.removable = true;
+      scene.add(mesh);
+
+      // Battery indicator
+      const batteryPercentage = drone.battery / 100;
+      const batteryBar = createHealthBar(batteryPercentage);
+      batteryBar.position.set(drone.position[0], drone.position[1] + 20, drone.position[2]);
+      batteryBar.userData.removable = true;
+      scene.add(batteryBar);
+
+      // Label
+      const label = createTextSprite(`S${drone.id}`, 0x00aaff);
+      label.position.set(drone.position[0], drone.position[1] + 30, drone.position[2]);
+      label.userData.removable = true;
+      scene.add(label);
+    });
+  }, [surveillanceDrones, surveillanceAsset]);
 
   const renderFrame = useCallback((frame) => {
     const scene = sceneRef.current;
@@ -479,15 +638,55 @@ const EnhancedDroneSwarmSystem = () => {
     fetchPresets();
   }, [fetchPresets]);
 
+  // Poll surveillance drones when no simulation is running
+  useEffect(() => {
+    if (currentSim || !showSurveillance) return;
+
+    const pollSurveillance = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/surveillance/status`);
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        if (data.drones && !data.paused) {
+          setSurveillanceDrones(data.drones);
+          // Set default asset at center
+          if (!surveillanceAsset) {
+            setSurveillanceAsset({
+              position: data.center_position || [0, 0, 0],
+              health: 100
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Surveillance polling error:', err);
+      }
+    };
+
+    // Poll immediately and then every second
+    pollSurveillance();
+    const interval = setInterval(pollSurveillance, 1000);
+    return () => clearInterval(interval);
+  }, [currentSim, showSurveillance, surveillanceAsset]);
+
   useEffect(() => {
     const mountElement = mountRef.current;
     if (!mountElement) return;
 
     initThreeJS();
+    
+    // Add click handler for spawning enemies
+    const canvas = rendererRef.current?.domElement;
+    if (canvas) {
+      canvas.addEventListener('click', handleCanvasClick);
+    }
 
     return () => {
       if (animationIdRef.current) {
         cancelAnimationFrame(animationIdRef.current);
+      }
+      if (canvas) {
+        canvas.removeEventListener('click', handleCanvasClick);
       }
       if (rendererRef.current) {
         rendererRef.current.dispose();
@@ -505,7 +704,7 @@ const EnhancedDroneSwarmSystem = () => {
       rendererRef.current = null;
       cameraRef.current = null;
     };
-  }, [initThreeJS]);
+  }, [initThreeJS, handleCanvasClick]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -551,8 +750,11 @@ const EnhancedDroneSwarmSystem = () => {
   useEffect(() => {
     if (frames.length > 0 && sceneRef.current) {
       renderFrame(frames[currentFrame]);
+    } else if (sceneRef.current && showSurveillance && surveillanceDrones.length > 0) {
+      // Render surveillance scene when no simulation is running
+      renderSurveillanceScene();
     }
-  }, [currentFrame, frames, renderFrame]);
+  }, [currentFrame, frames, renderFrame, showSurveillance, surveillanceDrones, surveillanceAsset]);
 
   useEffect(() => {
     updateGridVisibility();
@@ -637,6 +839,8 @@ const EnhancedDroneSwarmSystem = () => {
         const data = await res.json();
 
         console.log('📊 Poll:', data.status, '| Progress:', data.progress?.toFixed(1) || '?', '%');
+
+        setSimStatus(data.status); // Update status
 
         if (data.status === 'completed') {
           console.log('✅ Simulation complete! Fetching data...');
@@ -1004,6 +1208,29 @@ const EnhancedDroneSwarmSystem = () => {
                   Tactical Battlefield View
                 </h3>
                 <div className="flex gap-2">
+                  {currentSim && frames.length > 0 && playing && (
+                    <button
+                      onClick={() => setSpawnMode(!spawnMode)}
+                      className={`p-2 transition-colors rounded ${
+                        spawnMode 
+                          ? 'bg-red-600 hover:bg-red-500 text-white' 
+                          : 'bg-gray-700 hover:bg-gray-600'
+                      }`}
+                      title={spawnMode ? 'Disable spawn mode' : 'Enable spawn mode - Click to add enemies'}
+                    >
+                      <Plus className="w-5 h-5" />
+                    </button>
+                  )}
+                  {spawnMode && playing && (
+                    <select
+                      value={spawnType}
+                      onChange={(e) => setSpawnType(e.target.value)}
+                      className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm"
+                    >
+                      <option value="air">Air Enemy</option>
+                      <option value="ground">Ground Enemy</option>
+                    </select>
+                  )}
                   <button
                     onClick={() => setShowControls(prev => !prev)}
                     className="p-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
@@ -1017,9 +1244,16 @@ const EnhancedDroneSwarmSystem = () => {
               <div className="relative">
                 <div
                   ref={mountRef}
-                  className="w-full bg-black rounded-b-xl border border-cyan-900/30"
+                  className={`w-full bg-black rounded-b-xl border ${spawnMode ? 'border-red-500/60' : 'border-cyan-900/30'} ${spawnMode ? 'cursor-crosshair' : ''}`}
                   style={{ height: '600px' }}
                 />
+                
+                {spawnMode && (
+                  <div className="absolute top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-red-600/90 backdrop-blur-md rounded-lg border border-red-400/50 text-white font-semibold text-sm flex items-center gap-2 pointer-events-none">
+                    <Plus className="w-4 h-4" />
+                    <span>SPAWN MODE: Click anywhere to add {spawnType === 'air' ? 'AIR' : 'GROUND'} enemy</span>
+                  </div>
+                )}
 
                 <div className="absolute left-4 bottom-4 flex flex-col gap-2 pointer-events-none">
                   <button

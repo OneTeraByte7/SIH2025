@@ -9,6 +9,7 @@ import os
 from dotenv import load_dotenv
 import traceback
 from dynamic_simulation import start_dynamic_simulation, get_dynamic_status, get_dynamic_data
+from surveillance_system import get_surveillance_system, init_surveillance
 from drone_config import (
     EMPTY_WEIGHT, MAX_TAKEOFF_WEIGHT, MAX_PAYLOAD,
     ENDURANCE_MIN_EMPTY, ENDURANCE_MIN_FULL, BATTERY_INITIAL, MAX_SPEED,
@@ -54,7 +55,16 @@ app.config.setdefault('PERSISTED_SIMULATIONS', set())
 simulations = {}
 simulations_lock = Lock()
 
+# Initialize surveillance system on startup
+surveillance = None
+
 def run_simulation_async(sim_id: str, config: dict):
+    global surveillance
+    
+    # Pause surveillance when simulation starts
+    if surveillance:
+        surveillance.pause()
+    
     try:
         sim = SuperSimulation(config)
         sim.initialize_scenario()
@@ -142,6 +152,10 @@ def run_simulation_async(sim_id: str, config: dict):
             simulations[sim_id]['statistics'] = sim.get_statistics()
         if app.config.get('API_LOGS'):
             app.logger.info(f"Simulation {sim_id}: completed; statistics set")
+        
+        # Resume surveillance after simulation completes
+        if surveillance:
+            surveillance.resume()
     
     except Exception as e:
         error_msg = f"Simulation loop failed: {str(e)}"
@@ -584,6 +598,137 @@ def debug_simulations():
     return jsonify(out)
 
 
+# ============================================================================
+# SURVEILLANCE SYSTEM API - Continuous drone surveillance
+# ============================================================================
+
+@app.route('/api/surveillance/status', methods=['GET'])
+def get_surveillance_status():
+    """Get current surveillance system status and drone positions"""
+    global surveillance
+    if surveillance is None:
+        return jsonify({'error': 'Surveillance system not initialized'}), 404
+    
+    return jsonify(surveillance.get_state())
+
+
+@app.route('/api/surveillance/start', methods=['POST'])
+def start_surveillance():
+    """Start or restart surveillance system"""
+    global surveillance
+    
+    data = request.json or {}
+    center_position = data.get('center_position', [0, 0, 0])
+    patrol_radius = data.get('patrol_radius', 500.0)
+    
+    surveillance = init_surveillance(center_position, patrol_radius)
+    
+    return jsonify({
+        'status': 'started',
+        'center_position': center_position,
+        'patrol_radius': patrol_radius,
+        'drones': 3
+    })
+
+
+@app.route('/api/surveillance/stop', methods=['POST'])
+def stop_surveillance():
+    """Stop surveillance system"""
+    global surveillance
+    if surveillance:
+        surveillance.stop()
+        return jsonify({'status': 'stopped'})
+    return jsonify({'status': 'not_running'})
+
+
+@app.route('/api/surveillance/patrol-area', methods=['POST'])
+def set_patrol_area():
+    """Update surveillance patrol area"""
+    global surveillance
+    if surveillance is None:
+        return jsonify({'error': 'Surveillance system not initialized'}), 404
+    
+    data = request.json or {}
+    center_position = data.get('center_position', [0, 0, 0])
+    patrol_radius = data.get('patrol_radius', 500.0)
+    
+    surveillance.set_patrol_area(center_position, patrol_radius)
+    
+    return jsonify({
+        'status': 'updated',
+        'center_position': center_position,
+        'patrol_radius': patrol_radius
+    })
+
+
+@app.route('/api/simulation/<sim_id>/spawn-enemy', methods=['POST'])
+def spawn_enemy(sim_id):
+    """Spawn a new enemy drone at the specified position during ACTIVE simulation run"""
+    with simulations_lock:
+        if sim_id not in simulations:
+            return jsonify({'error': 'Simulation not found'}), 404
+        
+        sim = simulations[sim_id]
+        if sim['engine'] is None:
+            return jsonify({'error': 'Simulation not started'}), 400
+        
+        # Only allow spawning during active simulation (not during playback)
+        if sim['status'] != 'running':
+            return jsonify({'error': f'Can only spawn during active simulation. Current status: {sim["status"]}'}), 400
+        
+        engine = sim['engine']
+        data = request.json or {}
+        
+        # Get spawn position from request
+        position = data.get('position', [0, 100, 0])
+        enemy_type = data.get('type', 'air')  # 'air' or 'ground'
+        
+        # Import necessary classes
+        from drone_swarm import Drone, DroneType
+        import numpy as np
+        
+        # Create new enemy drone
+        new_enemy_id = 2000 + len(engine.enemies)  # IDs starting from 2000
+        
+        drone_type = DroneType.ENEMY_GROUND if enemy_type == 'ground' else DroneType.ENEMY_AIR
+        
+        # Calculate velocity towards nearest asset or friendly
+        target_pos = None
+        if enemy_type == 'ground' and engine.assets:
+            target_pos = engine.assets[0].position
+        elif engine.friendlies:
+            active_friendlies = [f for f in engine.friendlies if f.health > 0]
+            if active_friendlies:
+                target_pos = active_friendlies[0].position
+        
+        velocity = np.zeros(3)
+        if target_pos is not None:
+            direction = target_pos - np.array(position)
+            distance = np.linalg.norm(direction)
+            if distance > 0:
+                velocity = (direction / distance) * 40.0
+        
+        new_enemy = Drone(
+            id=new_enemy_id,
+            position=np.array(position, dtype=float),
+            velocity=velocity,
+            drone_type=drone_type,
+            health=80.0
+        )
+        
+        engine.enemies.append(new_enemy)
+        
+        if app.config.get('API_LOGS'):
+            app.logger.info(f"Spawned new {enemy_type} enemy {new_enemy_id} at {position}")
+        
+        return jsonify({
+            'success': True,
+            'enemy_id': new_enemy_id,
+            'position': position,
+            'type': enemy_type
+        })
+
+
 @app.route('/api/dynamic/start', methods=['POST'])
 def start_dynamic():
     """Start a dynamic (moving-asset) simulation. Uses `server/dynamic_simulation.py` and
@@ -984,6 +1129,74 @@ def get_drone_weight():
         })
 
 
+@app.route('/api/formulas/battery', methods=['POST'])
+def calculate_battery():
+    """
+    POST request to calculate battery drain using the battery formula.
+    
+    Example:
+    POST http://localhost:5000/api/formulas/battery
+    
+    Body:
+    {
+        "battery_percent": 100.0,
+        "bullets": 250,
+        "dt_seconds": 60.0
+    }
+    
+    Response:
+    {
+        "initial_battery": 100.0,
+        "final_battery": 98.61,
+        "battery_drained": 1.39,
+        "bullets": 250,
+        "time_elapsed_seconds": 60.0,
+        "payload_kg": 2.5,
+        "endurance_minutes": 60.0,
+        "estimated_flight_time_minutes": 59.17
+    }
+    """
+    data = request.json or {}
+    
+    # Get parameters from request
+    battery_percent = float(data.get('battery_percent', 100.0))
+    bullets = int(data.get('bullets', 0))
+    dt_seconds = float(data.get('dt_seconds', 0.0))
+    
+    # Validate inputs
+    if battery_percent < 0 or battery_percent > 100:
+        return jsonify({'error': 'battery_percent must be between 0 and 100'}), 400
+    if bullets < 0 or bullets > MAX_BULLETS:
+        return jsonify({'error': f'bullets must be between 0 and {MAX_BULLETS}'}), 400
+    if dt_seconds < 0:
+        return jsonify({'error': 'dt_seconds must be non-negative'}), 400
+    
+    # Calculate payload and endurance
+    payload_kg = bullets * BULLET_WEIGHT
+    payload_fraction = max(0.0, min(1.0, payload_kg / MAX_PAYLOAD_KG))
+    endurance_min = ENDURANCE_MIN_EMPTY - \
+                    (ENDURANCE_MIN_EMPTY - ENDURANCE_MIN_FULL) * payload_fraction
+    
+    # Calculate new battery level
+    new_battery = update_battery(battery_percent, bullets, dt_seconds)
+    battery_drained = battery_percent - new_battery
+    
+    # Calculate estimated remaining flight time
+    estimated_time = (new_battery / 100.0) * endurance_min
+    
+    return jsonify({
+        'initial_battery': round(battery_percent, 2),
+        'final_battery': round(new_battery, 2),
+        'battery_drained': round(battery_drained, 2),
+        'bullets': bullets,
+        'time_elapsed_seconds': dt_seconds,
+        'payload_kg': round(payload_kg, 2),
+        'payload_fraction': round(payload_fraction, 3),
+        'endurance_minutes': round(endurance_min, 2),
+        'estimated_flight_time_minutes': round(estimated_time, 2)
+    })
+
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     return jsonify({
@@ -993,6 +1206,18 @@ def health_check():
     })
 
 if __name__ == '__main__':
+    # Initialize surveillance system
+    surveillance = init_surveillance(center_position=[0, 0, 0], patrol_radius=300.0)
+    print("\n" + "=" * 70)
+    print("🛰️  SURVEILLANCE SYSTEM ACTIVE")
+    print("=" * 70)
+    print("  ✅ 3 surveillance drones deployed")
+    print("  ✅ Patrolling 300m radius around [0, 0, 0]")
+    print("  ✅ Inside asset protection boundary")
+    print("  ✅ Will pause during swarm simulations")
+    print("  ✅ API: /api/surveillance/status")
+    print("=" * 70 + "\n")
+    
     # When running with the Flask reloader (debug=True) the module may be
     # executed twice (parent + child). Use the WERKZEUG_RUN_MAIN env var to
     # ensure the startup banner prints only once (in the reloader child), or
