@@ -564,7 +564,7 @@ const EnhancedDroneSwarmSystem = () => {
       60,
       mountRef.current.clientWidth / mountRef.current.clientHeight,
       1,
-      5000
+      5001
     );
     camera.position.set(1500, 1000, 1500);
     camera.lookAt(0, 0, 0);
@@ -1625,115 +1625,10 @@ const EnhancedDroneSwarmSystem = () => {
                 </div>
               </div>
 
-<<<<<<< HEAD
-              <div className="relative">
-                <div
-                  ref={mountRef}
-                  className={`w-full bg-black rounded-b-xl border ${spawnMode ? 'border-red-500/60' : 'border-cyan-900/30'} ${spawnMode ? 'cursor-crosshair' : ''}`}
-                  style={{ height: '600px' }}
-                />
-                
-                {spawnMode && (
-                  <div className="absolute top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-red-600/90 backdrop-blur-md rounded-lg border border-red-400/50 text-white font-semibold text-sm flex items-center gap-2 pointer-events-none">
-                    <Plus className="w-4 h-4" />
-                    <span>SPAWN MODE: Click anywhere to add {spawnType === 'air' ? 'AIR' : 'GROUND'} enemy</span>
-                  </div>
-                )}
-
-                <div className="absolute left-4 bottom-4 flex flex-col gap-2 pointer-events-none">
-                  <button
-                    onClick={() => setShowGrid(prev => !prev)}
-                    className={`pointer-events-auto flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors backdrop-blur bg-black/70 border-cyan-500/40 hover:bg-cyan-500/20 ${showGrid ? 'text-cyan-200' : 'text-gray-300'}`}
-                    title="Toggle Grid"
-                  >
-                    {showGrid ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                    <span>{showGrid ? 'Hide Grid' : 'Show Grid'}</span>
-                  </button>
-                  <button
-                    onClick={() => setCameraMode(prev => (prev === 'orbital' ? 'static' : 'orbital'))}
-                    className="pointer-events-auto flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors backdrop-blur bg-black/70 border-cyan-500/40 hover:bg-cyan-500/20 text-cyan-200"
-                    title="Switch Camera Mode"
-                  >
-                    <Maximize2 className="w-4 h-4" />
-                    <span>{cameraMode === 'orbital' ? 'Static Camera' : 'Orbital Camera'}</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {showControls && (
-              <div className="bg-gray-900/50 border border-gray-800/60 rounded-xl p-4 backdrop-blur">
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    onClick={() => setPlaying(prev => !prev)}
-                    disabled={frames.length === 0}
-                    className="px-6 py-3 bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 disabled:from-gray-700 disabled:to-gray-700 rounded-lg flex items-center gap-2 transition-all font-semibold shadow-lg disabled:cursor-not-allowed"
-                  >
-                    {playing ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-                    {playing ? 'Pause' : 'Play'}
-                  </button>
-
-                  <button
-                    onClick={() => { setCurrentFrame(0); setPlaying(false); }}
-                    disabled={frames.length === 0}
-                    className="px-4 py-3 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 rounded-lg transition-all disabled:cursor-not-allowed"
-                    title="Restart"
-                  >
-                    <RotateCcw className="w-5 h-5" />
-                  </button>
-
-                  <button
-                    onClick={() => { 
-                      setCurrentFrame(Math.max(0, currentFrame - 50)); 
-                      setPlaying(false); 
-                    }}
-                    disabled={frames.length === 0 || currentFrame === 0}
-                    className="px-4 py-3 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 rounded-lg transition-all disabled:cursor-not-allowed"
-                    title="Skip back 50 frames"
-                  >
-                    <SkipBack className="w-5 h-5" />
-                  </button>
-
-                  <button
-                    onClick={() => { 
-                      setCurrentFrame(Math.min(frames.length - 1, currentFrame + 50)); 
-                      setPlaying(false); 
-                    }}
-                    disabled={frames.length === 0 || currentFrame >= frames.length - 1}
-                    className="px-4 py-3 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 rounded-lg transition-all disabled:cursor-not-allowed"
-                    title="Skip forward 50 frames"
-                  >
-                    <SkipForward className="w-5 h-5" />
-                  </button>
-
-                  <button
-                    onClick={() => { 
-                      setCurrentFrame(frames.length - 1); 
-                      setPlaying(false);
-                      console.log('[Playback] Jumped to end, frame:', frames.length - 1);
-                    }}
-                    disabled={frames.length === 0}
-                    className="px-4 py-3 bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 disabled:from-gray-700 disabled:to-gray-700 rounded-lg transition-all disabled:cursor-not-allowed font-semibold"
-                    title="Jump to End"
-                  >
-                    End
-                  </button>
-
-                  <button
-                    onClick={() => setShowDynamic(true)}
-                    className="px-3 py-3 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm"
-                    title="Dynamic Simulation"
-                  >
-                    Dynamic
-                  </button>
-
-                  <div className="flex-1 min-w-[200px]">
-=======
               <div className="grid md:grid-cols-2 gap-6 text-sm">
                 <div className="space-y-3">
                   <label className="block">
                     <span className="text-gray-400">Scenario Name</span>
->>>>>>> ui-ux-changes
                     <input
                       type="text"
                       value={customConfig.name}
