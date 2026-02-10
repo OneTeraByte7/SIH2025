@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Play, RefreshCw } from 'lucide-react';
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = 'https://sih2025-f2bw.onrender.com/api';
 
 export default function DynamicSimulation({ onClose }) {
   const [simId, setSimId] = useState(null);

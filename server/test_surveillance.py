@@ -5,7 +5,7 @@ import requests
 import time
 import json
 
-BASE_URL = "http://localhost:5000/api"
+BASE_URL = "https://sih2025-f2bw.onrender.com/api"
 
 def test_surveillance():
     print("=" * 60)

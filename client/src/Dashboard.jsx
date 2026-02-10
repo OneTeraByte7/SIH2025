@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { X, TrendingUp, Target, Shield, Zap } from 'lucide-react';
+import { API_BASE } from './constants';
 
 const AnalyticsDashboard = ({ simulationId, onClose }) => {
   const [analytics, setAnalytics] = useState(null);
@@ -9,7 +10,7 @@ const AnalyticsDashboard = ({ simulationId, onClose }) => {
   useEffect(() => {
     const fetchAnalytics = async () => {
       try {
-        const response = await fetch(`http://localhost:5000/api/simulation/${simulationId}/analytics`);
+        const response = await fetch(`${API_BASE}/simulation/${simulationId}/analytics`);
         const data = await response.json();
         setAnalytics(data);
         setLoading(false);

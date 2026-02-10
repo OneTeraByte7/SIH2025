@@ -1,7 +1,7 @@
 import { Shield, Orbit, Radar, Waves } from "lucide-react";
 
 export const MAP_EXTENT = 1500;
-export const API_BASE = "http://localhost:5000/api";
+export const API_BASE = "https://sih2025-f2bw.onrender.com/api";
 
 export const legendItems = [
   {

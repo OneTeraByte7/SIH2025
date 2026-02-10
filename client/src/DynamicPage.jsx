@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { X, Play, StopCircle } from 'lucide-react';
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = 'https://sih2025-f2bw.onrender.com/api';
 
 function createDroneMesh(color = 0x00ff00, size = 6) {
   // use a cone to better represent orientation and tactical look
