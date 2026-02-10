@@ -70,7 +70,8 @@ const EnhancedDroneSwarmSystem = () => {
           'sentinel-veil': Radar,
           'cbba-superiority': Shield,
           'cvt-cbf': Radar,
-          'qipfd-quantum': Orbit
+          'qipfd-quantum': Orbit,
+          'flocking-boids': Waves
         };
 
         const mapped = data.map(item => ({
@@ -650,8 +651,17 @@ const EnhancedDroneSwarmSystem = () => {
     const pollSurveillance = async () => {
       try {
         const res = await fetch(`${API_BASE}/surveillance/status`);
-        if (!res.ok) return;
+        if (!res.ok) {
+          console.warn('Surveillance status not available');
+          return;
+        }
         const data = await res.json();
+        
+        // Handle both active and inactive surveillance
+        if (data.active === false) {
+          setSurveillanceDrones([]);
+          return;
+        }
         
         if (data.drones && !data.paused) {
           setSurveillanceDrones(data.drones);
@@ -664,7 +674,7 @@ const EnhancedDroneSwarmSystem = () => {
           }
         }
       } catch (err) {
-        console.warn('Surveillance polling error:', err);
+        // Silently fail - surveillance is optional
       }
     };
 

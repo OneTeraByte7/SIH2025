@@ -607,7 +607,11 @@ def get_surveillance_status():
     """Get current surveillance system status and drone positions"""
     global surveillance
     if surveillance is None:
-        return jsonify({'error': 'Surveillance system not initialized'}), 404
+        return jsonify({
+            'active': False,
+            'drones': [],
+            'message': 'Surveillance system not active'
+        })
     
     return jsonify(surveillance.get_state())
 
@@ -1204,6 +1208,7 @@ def health_check():
         'active_simulations': len(simulations),
         'version': 'EMERGENCY_FIX_v1'
     })
+
 
 if __name__ == '__main__':
     # Initialize surveillance system

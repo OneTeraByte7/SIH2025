@@ -11,12 +11,6 @@ export const legendItems = [
     swatch: "legend-chip legend-chip--friendly",
   },
   {
-    label: "Hunter / Pursuit Drone",
-    description:
-      "Orange sphere — fast pursuit units that chase down intruders.",
-    swatch: "legend-chip legend-chip--hunter",
-  },
-  {
     label: "Interceptor Specialist",
     description:
       "Pink sphere — agile response craft prioritising ground-based threats.",

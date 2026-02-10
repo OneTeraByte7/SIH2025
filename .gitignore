@@ -5,6 +5,11 @@ node_modules/
 
 # Python
 server/.venv/
+server/.venv311/
+.venv/
+.venv*/
+venv/
+venv*/
 server/__pycache__/
 server/**/__pycache__/
 *.pyc

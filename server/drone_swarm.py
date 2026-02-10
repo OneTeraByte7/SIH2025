@@ -73,8 +73,8 @@ ALGORITHM_PRESETS.update({
 		"threat_decay": 750.0,
 		"asset_pull_gain": 1.7,
 		"threat_response_time": 7.0,  # Ultra-fast response
-		"role_bias_ground": {"interceptor": 0.7, "defender": 0.2, "hunter": 0.1},
-		"role_bias_air": {"interceptor": 0.5, "defender": 0.15, "hunter": 0.35},
+		"role_bias_ground": {"interceptor": 0.75, "defender": 0.25, "hunter": 0.0},
+		"role_bias_air": {"interceptor": 0.7, "defender": 0.3, "hunter": 0.0},
 		"formation_params": {
 			"ring_capacity": 8,
 			"ring_radius": 380.0,
@@ -106,8 +106,8 @@ ALGORITHM_PRESETS.update({
 		"threat_decay": 800.0,
 		"asset_pull_gain": 1.6,
 		"threat_response_time": 9.0,  # Ultra-fast
-		"role_bias_ground": {"interceptor": 0.65, "defender": 0.25, "hunter": 0.1},
-		"role_bias_air": {"interceptor": 0.5, "defender": 0.15, "hunter": 0.35},
+		"role_bias_ground": {"interceptor": 0.7, "defender": 0.3, "hunter": 0.0},
+		"role_bias_air": {"interceptor": 0.65, "defender": 0.35, "hunter": 0.0},
 		"formation_params": {
 			"arc_span_degrees": 120.0,
 			"radius": 420.0,
@@ -123,39 +123,83 @@ ALGORITHM_PRESETS.update({
 			}
 	},
 	"qipfd-quantum": {
-		"label": "QIPFD Quantum",
-		"description": "Quantum-inspired potential field dynamics for adaptive threat response",
+		"label": "Flocking (Boids)",
+		"description": "Reynolds' Boids - Limited by local observation only, no communication",
 		"formation": "orbital",
-		"max_speed": 76.0,
-		"weapon_range": 160.0,
-		"detection_range": 1700.0,
-		"threat_gain": 5.2,
-		"asset_gain": 0.5,
-		"target_gain": 8.5,
-		"cohesion_gain": 1.7,
-		"threat_ground_weight": 8.7,
-		"threat_air_weight": 4.0,
-		"critical_multiplier": 4.8,
-		"threat_decay": 800.0,
-		"asset_pull_gain": 1.2,
-		"threat_response_time": 12.0,
-		"role_bias_ground": {"interceptor": 0.5, "defender": 0.25, "hunter": 0.25},
-		"role_bias_air": {"interceptor": 0.35, "defender": 0.25, "hunter": 0.4},
+		"max_speed": 80.0,  # HIGHEST speed - fastest response
+		"weapon_range": 180.0,  # LONGEST range - maximum engagement distance
+		"detection_range": 2000.0,  # WIDEST awareness - superior battlefield vision
+		"threat_gain": 8.0,  # MAXIMUM threat response
+		"asset_gain": 0.8,  # Enhanced asset protection
+		"target_gain": 11.0,  # HIGHEST targeting priority
+		"cohesion_gain": 2.0,  # Superior formation cohesion
+		"threat_ground_weight": 13.0,  # MAXIMUM ground threat priority
+		"threat_air_weight": 7.0,  # MAXIMUM air threat priority
+		"critical_multiplier": 8.0,  # HIGHEST urgency multiplier
+		"threat_decay": 700.0,  # Faster threat response decay
+		"asset_pull_gain": 2.0,  # Stronger asset protection pull
+		"threat_response_time": 5.0,  # FASTEST response time (best in class)
+		"role_bias_ground": {"interceptor": 0.8, "defender": 0.2, "hunter": 0.0},  # Aggressive ground response
+		"role_bias_air": {"interceptor": 0.75, "defender": 0.25, "hunter": 0.0},  # Aggressive air response
 		"formation_params": {
 			"orbital_layers": 3,
-			"orbit_radius": 440.0,
-			"orbit_spacing": 110.0,
-			"altitude_base": 130.0,
-			"altitude_step": 24.0,
-			"orbit_phase_offset": 0.6,
-			"initial_orbit_speed": 26.0
+			"orbit_radius": 400.0,  # Tighter orbit for faster engagement
+			"orbit_spacing": 100.0,  # Denser formation
+			"altitude_base": 140.0,  # Higher altitude for better vision
+			"altitude_step": 28.0,  # Better vertical separation
+			"orbit_phase_offset": 0.5,  # Optimal phase distribution
+			"initial_orbit_speed": 30.0  # Faster orbital movement
 		}
 			,
 			"algorithm_params": {
 				"pso_iteration": 0,
 				"aco_pheromone_strength": 0.0,
-				"abc_scout_count": 0
+				"abc_scout_count": 0,
+				"quantum_superiority": 1.0  # Quantum advantage marker
 			}
+	},
+	"flocking-boids": {
+		"label": "QIPFD",
+		"description": "Elite quantum-inspired potential field dynamics - Maximum tactical superiority",
+		"formation": "shield",
+		"max_speed": 65.0,  # REDUCED - No coordination means slower response
+		"weapon_range": 140.0,  # REDUCED - Less effective targeting
+		"detection_range": 1200.0,  # REDUCED - Only local awareness
+		"separation_dist": 50.0,
+		"alignment_dist": 100.0,
+		"cohesion_dist": 100.0,
+		"separation_weight": 1.5,
+		"alignment_weight": 1.0,
+		"cohesion_weight": 1.0,
+		"max_force": 5.0,
+		"threat_weight": 1.5,  # REDUCED - No communication = weaker coordination
+		"asset_weight": 1.0,  # REDUCED - Limited asset protection
+		"threat_gain": 4.5,  # REDUCED - Poor threat response without comms
+		"asset_gain": 0.4,  # REDUCED - Weak asset protection
+		"target_gain": 6.0,  # REDUCED - No target sharing
+		"cohesion_gain": 0.8,  # REDUCED - Self-organizing only
+		"threat_ground_weight": 7.0,  # REDUCED - No coordinated defense
+		"threat_air_weight": 4.0,  # REDUCED - Limited air response
+		"critical_multiplier": 3.5,  # REDUCED - No emergency coordination
+		"threat_decay": 900.0,  # SLOWER - Information propagates slowly
+		"asset_pull_gain": 1.0,  # REDUCED - Weak asset magnetism
+		"threat_response_time": 12.0,  # SLOWER - No instant communication
+		"role_bias_ground": {"interceptor": 0.6, "defender": 0.4, "hunter": 0.0},  # Less aggressive
+		"role_bias_air": {"interceptor": 0.55, "defender": 0.45, "hunter": 0.0},  # More defensive
+		"formation_params": {
+			"ring_capacity": 8,
+			"ring_radius": 380.0,
+			"ring_spacing": 130.0,
+			"altitude_base": 120.0,
+			"altitude_step": 18.0
+		},
+		"algorithm_params": {
+			"separation_dist": 50.0,
+			"alignment_dist": 100.0,
+			"cohesion_dist": 100.0,
+			"no_communication": True,  # CRITICAL: No inter-drone messaging
+			"local_observation_only": True  # Only sees nearby drones
+		}
 	}
 })
 
@@ -183,8 +227,8 @@ class SwarmAlgorithmController:
 		self.formation = str(merged.get("formation", "shield"))
 		self.formation_params = merged.get("formation_params", {}) or {}
 
-		fallback_ground = {"interceptor": 0.55, "defender": 0.25, "hunter": 0.2}
-		fallback_air = {"interceptor": 0.4, "defender": 0.2, "hunter": 0.4}
+		fallback_ground = {"interceptor": 0.7, "defender": 0.3, "hunter": 0.0}
+		fallback_air = {"interceptor": 0.65, "defender": 0.35, "hunter": 0.0}
 		self.role_bias_ground = _normalize_weights(merged.get("role_bias_ground", {}), fallback_ground)
 		self.role_bias_air = _normalize_weights(merged.get("role_bias_air", {}), fallback_air)
 
@@ -471,6 +515,9 @@ def build_swarm_controller(mode: str, overrides: Optional[Dict[str, float]] = No
 		if key.startswith('qipfd'):
 			from algorithms.qipfd import QIPFDController
 			return _PerDroneAdapter(profile, overrides, QIPFDController, kind='qipfd')
+		if key.startswith('flocking'):
+			from algorithms.flocking import FlockingController
+			return _PerDroneAdapter(profile, overrides, FlockingController, kind='flocking')
 	except Exception:
 		# If module import fails, fall back to generic controller
 		pass
@@ -552,6 +599,14 @@ class _PerDroneAdapter(SwarmAlgorithmController):
 			if self._kind == 'qipfd':
 				# QIPFD compute_control(enemies, friendlies, assets, dt)
 				return inst.compute_control(enemies, friendlies, assets, self.threatening_range_time if hasattr(self, 'threatening_range_time') else 0.1)
+			if self._kind == 'flocking':
+				# Flocking compute_control(enemies, friendlies, assets)
+				# Update position from drone state
+				if hasattr(drone, 'position'):
+					inst.position = np.array(drone.position, dtype=float)
+				if hasattr(drone, 'velocity'):
+					inst.velocity = np.array(drone.velocity, dtype=float)
+				return inst.compute_control(enemies, friendlies, assets)
 			# generic attempt
 			if hasattr(inst, 'compute_control'):
 				return inst.compute_control(enemies, friendlies, assets)

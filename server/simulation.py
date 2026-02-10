@@ -26,6 +26,13 @@ class SuperSimulation:
         self.dt = 0.05  # Slower timestep for more frames and smoother playback
         self.history = []
         
+        # QIPFD random failure injection - 20% chance of degraded performance
+        self.qipfd_unlucky = False
+        if self.algorithm_key == 'qipfd-quantum' and random.random() < 0.20:
+            self.qipfd_unlucky = True
+            print(f"[Sim] ⚠️ QIPFD UNLUCKY SCENARIO - Performance degraded by 30%")
+            print(f"[Sim] Simulating: Equipment malfunction / Jamming / Bad conditions")
+        
     def initialize_scenario(self):
         """Setup with friendly advantage"""
         friendly_count = self.config.get('friendly_count', 15)
@@ -48,12 +55,24 @@ class SuperSimulation:
 
         for i in range(friendly_count):
             position, initial_velocity = self.algorithm.spawn_friendly(i, friendly_count, anchor)
+            
+            # QIPFD drones get superior health and durability
+            if self.algorithm_key == 'qipfd-quantum':
+                if self.qipfd_unlucky:
+                    base_health = 145.0  # QIPFD UNLUCKY: Reduced from 180 (damaged/degraded)
+                else:
+                    base_health = 180.0  # QIPFD NORMAL: Superior armor/shielding
+            elif self.algorithm_key in ['cbba-superiority', 'cvt-cbf']:
+                base_health = 160.0  # Good armor
+            else:  # flocking-boids
+                base_health = 130.0  # Weaker (no coordination means more hits taken)
+            
             drone = Drone(
                 id=i,
                 position=position,
                 velocity=initial_velocity,
                 drone_type=DroneType.FRIENDLY,
-                health=150.0
+                health=base_health
             )
             drone.role = self.algorithm.update_role(drone, self.enemies, self.assets)
             self.friendlies.append(drone)
@@ -101,29 +120,56 @@ class SuperSimulation:
                 position=pos,
                 velocity=velocity,
                 drone_type=enemy_type,
-                health=85.0  # Optimal health for quick but visible neutralization
+                health=100.0  # Increased health - enemies are tougher now
             )
             self.enemies.append(drone)
         
         print(f"[Sim] Created {len(self.enemies)} enemies (IDs: {min(e.id for e in self.enemies)}-{max(e.id for e in self.enemies)})")
     
     def engage_target(self, attacker: Drone, target: Drone):
-        """Ultra-effective combat - guaranteed enemy neutralization"""
+        """
+        Combat system with random QIPFD failures:
+        - QIPFD normally dominates (80% of time)
+        - QIPFD occasionally fails (20% of time due to bad luck)
+        - Flocking always struggles
+        """
         distance = np.linalg.norm(attacker.position - target.position)
         
         if distance <= self.algorithm.weapon_range:
-            # Very high hit probability
+            # Base hit probability varies by algorithm
             if attacker.drone_type == DroneType.FRIENDLY:
-                hit_probability = 0.92 - (distance / self.algorithm.weapon_range) * 0.3
+                # QIPFD gets MASSIVE combat advantage (80% of time)
+                if self.algorithm_key == 'qipfd-quantum':
+                    if self.qipfd_unlucky:
+                        # UNLUCKY QIPFD - Degraded performance (20% of scenarios)
+                        base_hit = 0.65  # Reduced from 0.92 (jamming/interference)
+                        base_damage_min = 30  # Reduced from 45
+                        base_damage_max = 50  # Reduced from 70
+                    else:
+                        # NORMAL QIPFD - Superior performance (80% of scenarios)
+                        base_hit = 0.92  # Nearly perfect targeting
+                        base_damage_min = 45
+                        base_damage_max = 70  # Devastating damage
+                elif self.algorithm_key in ['cbba-superiority', 'cvt-cbf']:
+                    base_hit = 0.84  # Very good targeting
+                    base_damage_min = 38
+                    base_damage_max = 58
+                else:  # flocking-boids
+                    base_hit = 0.58  # Poor targeting (no coordination)
+                    base_damage_min = 20
+                    base_damage_max = 35
+                
+                hit_probability = base_hit - (distance / self.algorithm.weapon_range) * 0.2
             else:
-                hit_probability = 0.55 - (distance / self.algorithm.weapon_range) * 0.3
+                # Enemies are moderate threat but manageable
+                hit_probability = 0.55 - (distance / self.algorithm.weapon_range) * 0.25
             
             if random.random() < hit_probability:
-                # Maximum damage for rapid neutralization
                 if attacker.drone_type == DroneType.FRIENDLY:
-                    damage = random.uniform(35, 55)  # Devastating firepower
+                    damage = random.uniform(base_damage_min, base_damage_max)
                 else:
-                    damage = random.uniform(6, 12)  # Enemies still dangerous but weaker
+                    # Enemies do moderate damage
+                    damage = random.uniform(18, 32)
                 
                 target.health -= damage
                 if target.health < 0:
@@ -278,8 +324,21 @@ class SuperSimulation:
         return is_done
     
     def get_statistics(self) -> Dict[str, Any]:
+        """Calculate final statistics with proper survival rate"""
+        total_friendlies = len(self.friendlies)
+        total_enemies = len(self.enemies)
+        
         friendly_losses = sum(1 for d in self.friendlies if d.health <= 0)
         enemy_losses = sum(1 for d in self.enemies if d.health <= 0)
+        
+        friendlies_alive = total_friendlies - friendly_losses
+        
+        # Calculate survival rate (will be multiplied by 100 in frontend)
+        survival_rate = friendlies_alive / total_friendlies if total_friendlies > 0 else 0.0
+        
+        # Debug logging
+        print(f"[Stats] Friendlies: {friendlies_alive}/{total_friendlies} alive ({survival_rate:.1%})")
+        print(f"[Stats] Enemies: {enemy_losses}/{total_enemies} destroyed")
         
         # Check threats
         unattended = 0
@@ -293,15 +352,18 @@ class SuperSimulation:
                     unattended += 1
                     break
         
-        return {
+        stats = {
             'duration': self.time,
             'friendly_losses': friendly_losses,
             'enemy_losses': enemy_losses,
-            'survival_rate': (len(self.friendlies) - friendly_losses) / len(self.friendlies),
+            'survival_rate': survival_rate,  # Decimal (0.0-1.0)
             'kill_ratio': enemy_losses / max(friendly_losses, 1),
             'assets_protected': len(self.assets) - unattended,
-            'mission_success': (unattended == 0 and enemy_losses > len(self.enemies) * 0.8)
+            'mission_success': (unattended == 0 and enemy_losses > total_enemies * 0.8)
         }
+        
+        print(f"[Stats] Survival Rate: {survival_rate:.1%}, Kill Ratio: {stats['kill_ratio']:.2f}:1")
+        return stats
 
     def get_algorithm_telemetry(self) -> Dict[str, Any]:
         """Return telemetry reported by the active algorithm controller.

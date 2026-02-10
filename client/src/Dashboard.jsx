@@ -45,16 +45,14 @@ const AnalyticsDashboard = ({ simulationId, onClose }) => {
 
   const roleData = analytics.timestamps.map((time, idx) => ({
     time: time.toFixed(1),
-    hunter: analytics.role_distribution.hunter[idx],
     defender: analytics.role_distribution.defender[idx],
     interceptor: analytics.role_distribution.interceptor[idx]
   }));
 
   const finalRoleDistribution = [
-    { name: 'Hunter', value: analytics.role_distribution.hunter[analytics.role_distribution.hunter.length - 1], color: '#ff6600' },
     { name: 'Defender', value: analytics.role_distribution.defender[analytics.role_distribution.defender.length - 1], color: '#00aaff' },
     { name: 'Interceptor', value: analytics.role_distribution.interceptor[analytics.role_distribution.interceptor.length - 1], color: '#ff0066' }
-  ];
+  ].filter(item => item.value > 0);
 
   const stats = analytics.statistics;
 
@@ -180,14 +178,6 @@ const AnalyticsDashboard = ({ simulationId, onClose }) => {
                   contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '0.5rem' }}
                 />
                 <Legend />
-                <Line 
-                  type="monotone" 
-                  dataKey="hunter" 
-                  stroke="#ff6600" 
-                  strokeWidth={2}
-                  dot={false}
-                  name="Hunters"
-                />
                 <Line 
                   type="monotone" 
                   dataKey="defender" 

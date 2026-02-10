@@ -29,9 +29,15 @@ export default function DynamicPage({ onClose }) {
   const [status, setStatus] = useState('idle');
   const [frames, setFrames] = useState([]);
   const [playing, setPlaying] = useState(false);
-  const [params, setParams] = useState({ max_time: 30, friendly_count: 12, enemy_count: 8 });
+  const [params, setParams] = useState({ 
+    max_time: 30, 
+    friendly_count: 12, 
+    enemy_count: 8,
+    swarm_algorithm: 'cbba-superiority'
+  });
   const currentFrameIndex = useRef(0);
   const [liveStats, setLiveStats] = useState({ friendlies: 0, enemies: 0, enemiesKilled: 0, assetHealth: 100 });
+  const [algorithms, setAlgorithms] = useState([]);
 
   const createHealthBar = (percentage) => {
     const canvas = document.createElement('canvas');
@@ -246,6 +252,19 @@ export default function DynamicPage({ onClose }) {
     });
   }, [params.enemy_count]);
 
+  // Load algorithms on mount
+  useEffect(() => {
+    fetch(`${API_BASE}/algorithms`)
+      .then(res => res.json())
+      .then(data => {
+        setAlgorithms(data);
+        if (data.length > 0) {
+          setParams(p => ({ ...p, swarm_algorithm: data[0].value }));
+        }
+      })
+      .catch(err => console.warn('Failed to load algorithms', err));
+  }, []);
+
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
@@ -441,7 +460,7 @@ export default function DynamicPage({ onClose }) {
     setFrames([]);
     currentFrameIndex.current = 0;
     try {
-      const { max_time, friendly_count, enemy_count } = params;
+      const { max_time, friendly_count, enemy_count, swarm_algorithm } = params;
       // generate linear path from -400 to 400 over max_time
       const steps = 12;
       const asset_path = [];
@@ -458,7 +477,7 @@ export default function DynamicPage({ onClose }) {
         max_speed: 70,
         weapon_range: 150,
         detection_range: 1500,
-        swarm_algorithm: 'cbba-superiority',
+        swarm_algorithm: swarm_algorithm || 'cbba-superiority',
         assets: [{ position: [0, 0, 0], value: 1 }],
         asset_path,
       };
@@ -525,11 +544,43 @@ export default function DynamicPage({ onClose }) {
                     {liveStats.assetHealth.toFixed(1)}%
                   </span>
                 </div>
+                {(status === 'completed' || status === 'stopped') && frames.length > 0 && (
+                  <>
+                    <div className="border-t border-cyan-900 my-2"></div>
+                    <div className="text-xs font-semibold text-cyan-200 mb-1">Final Result:</div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Mission:</span>
+                      <span className={`font-bold ${liveStats.assetHealth > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {liveStats.assetHealth > 0 ? '✓ SUCCESS' : '✗ FAILED'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Drones Left:</span>
+                      <span className="text-cyan-300 font-bold">{liveStats.friendlies}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Asset Status:</span>
+                      <span className={`font-bold ${liveStats.assetHealth > 60 ? 'text-green-400' : 'text-yellow-400'}`}>
+                        {liveStats.assetHealth > 0 ? 'Protected' : 'Destroyed'}
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
             <div className="bg-black/30 border border-slate-700 rounded p-3">
-              <label className="text-sm text-gray-300">Max time (s)</label>
+              <label className="text-sm text-gray-300">Algorithm</label>
+              <select 
+                value={params.swarm_algorithm} 
+                onChange={(e)=>setParams(p=>({...p, swarm_algorithm: e.target.value}))} 
+                className="w-full mt-2 p-2 rounded bg-slate-900 text-sm"
+              >
+                {algorithms.map(algo => (
+                  <option key={algo.value} value={algo.value}>{algo.label}</option>
+                ))}
+              </select>
+              <label className="text-sm text-gray-300 mt-3">Max time (s)</label>
               <input type="number" value={params.max_time} onChange={(e)=>setParams(p=>({...p, max_time: Number(e.target.value)||30}))} className="w-full mt-2 p-2 rounded bg-slate-900 text-sm" />
               <label className="text-sm text-gray-300 mt-2">Friendlies</label>
               <input type="number" value={params.friendly_count} onChange={(e)=>setParams(p=>({...p, friendly_count: Number(e.target.value)||0}))} className="w-full mt-2 p-2 rounded bg-slate-900 text-sm" />
@@ -548,10 +599,6 @@ export default function DynamicPage({ onClose }) {
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-full bg-cyan-500"></div>
                   <span className="text-gray-300">Defender (Sphere)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-orange-600"></div>
-                  <span className="text-gray-300">Hunter (Octahedron)</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 bg-pink-600 transform rotate-45"></div>
